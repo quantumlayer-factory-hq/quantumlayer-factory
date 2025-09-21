@@ -28,6 +28,7 @@ func Execute() {
 	root.AddCommand(NewStatusCmd())
 	root.AddCommand(NewOverlaysCmd())
 	root.AddCommand(NewPreviewCmd())
+	root.AddCommand(NewPackageCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
