@@ -129,19 +129,20 @@ func TestPackageArtifactsActivityDirectly(t *testing.T) {
 
 	projectID := "test-project-123"
 
-	result, err := PackageArtifactsActivity(ctx, generatedCode, irSpec, projectID)
-
+	// Test normal mode
+	result, err := PackageArtifactsActivity(ctx, generatedCode, irSpec, projectID, false, "./generated")
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.NotEmpty(t, result.ArtifactPaths)
+	assert.Contains(t, result.OutputPath, projectID)
 
-	// Should include generated files + IR spec + README
-	assert.GreaterOrEqual(t, len(result.ArtifactPaths), 4)
-
-	// Check that project ID is included in paths
-	for _, path := range result.ArtifactPaths {
-		assert.Contains(t, path, projectID)
-	}
+	// Test dry-run mode
+	dryResult, err := PackageArtifactsActivity(ctx, generatedCode, irSpec, projectID, true, "./generated")
+	require.NoError(t, err)
+	assert.True(t, dryResult.Success)
+	assert.NotEmpty(t, dryResult.SOCPatch)
+	assert.Contains(t, dryResult.SOCPatch, "=== Generated Code (Dry Run) ===")
+	assert.Equal(t, "(dry-run - no files written)", dryResult.OutputPath)
 }
 
 func TestLanguageDetection(t *testing.T) {

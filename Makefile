@@ -43,3 +43,10 @@ agents-test:
 
 e2e-test:
 	go test -v ./tests/e2e/...
+
+.PHONY: cli cli-test
+cli:
+	go build -o bin/qlf ./cmd/qlf
+
+cli-test:
+	go test ./cmd/qlf/...

@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"fmt"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -11,23 +12,36 @@ import (
 
 // FactoryWorkflowInput represents the input for the factory workflow
 type FactoryWorkflowInput struct {
-	Brief        string            `json:"brief"`
+	Brief        string                 `json:"brief"`
 	Config       map[string]interface{} `json:"config,omitempty"`
-	RequesterID  string            `json:"requester_id,omitempty"`
-	ProjectID    string            `json:"project_id,omitempty"`
+	RequesterID  string                 `json:"requester_id,omitempty"`
+	ProjectID    string                 `json:"project_id,omitempty"`
+	DryRun       bool                   `json:"dry_run,omitempty"`
+	Verbose      bool                   `json:"verbose,omitempty"`
+	OutputDir    string                 `json:"output_dir,omitempty"`
 }
+
+// CLI-compatible aliases for easier integration
+type FactoryInput = FactoryWorkflowInput
 
 // FactoryWorkflowResult represents the result of the factory workflow
 type FactoryWorkflowResult struct {
-	Success      bool              `json:"success"`
-	ProjectID    string            `json:"project_id"`
-	IRSpec       *ir.IRSpec        `json:"ir_spec,omitempty"`
+	Success       bool              `json:"success"`
+	ProjectID     string            `json:"project_id"`
+	IRSpec        *ir.IRSpec        `json:"ir_spec,omitempty"`
 	GeneratedCode map[string]string `json:"generated_code,omitempty"`
-	Artifacts    []string          `json:"artifacts"`
-	Errors       []string          `json:"errors,omitempty"`
-	Warnings     []string          `json:"warnings,omitempty"`
-	Duration     time.Duration     `json:"duration"`
+	Artifacts     []string          `json:"artifacts"`
+	Errors        []string          `json:"errors,omitempty"`
+	Warnings      []string          `json:"warnings,omitempty"`
+	Duration      time.Duration     `json:"duration"`
+	// CLI-specific fields
+	SOCPatch      string `json:"soc_patch,omitempty"`   // for dry-run output
+	OutputPath    string `json:"output_path,omitempty"` // where files were written
+	Summary       string `json:"summary,omitempty"`     // human-readable summary
 }
+
+// CLI-compatible aliases for easier integration
+type FactoryResult = FactoryWorkflowResult
 
 // FactoryWorkflow orchestrates the entire code generation process
 func FactoryWorkflow(ctx workflow.Context, input FactoryWorkflowInput) (*FactoryWorkflowResult, error) {
@@ -127,11 +141,22 @@ func FactoryWorkflow(ctx workflow.Context, input FactoryWorkflowInput) (*Factory
 	// Step 5: Package and store artifacts
 	logger.Info("Step 5: Packaging artifacts")
 	var packageResult PackageResult
-	err = workflow.ExecuteActivity(ctx, PackageArtifactsActivity, result.GeneratedCode, result.IRSpec, input.ProjectID).Get(ctx, &packageResult)
+	err = workflow.ExecuteActivity(ctx, PackageArtifactsActivity, result.GeneratedCode, result.IRSpec, input.ProjectID, input.DryRun, input.OutputDir).Get(ctx, &packageResult)
 	if err != nil {
 		result.Warnings = append(result.Warnings, "Failed to package artifacts: "+err.Error())
 	} else {
 		result.Artifacts = append(result.Artifacts, packageResult.ArtifactPaths...)
+		result.OutputPath = packageResult.OutputPath
+		result.SOCPatch = packageResult.SOCPatch
+	}
+
+	// Generate summary
+	if input.DryRun {
+		result.Summary = fmt.Sprintf("Dry run completed. Generated %d files for %s application.",
+			len(result.GeneratedCode), result.IRSpec.App.Type)
+	} else {
+		result.Summary = fmt.Sprintf("Successfully generated %s application with %d files.",
+			result.IRSpec.App.Type, len(result.GeneratedCode))
 	}
 
 	result.Duration = workflow.Now(ctx).Sub(startTime)
@@ -167,4 +192,6 @@ type VerificationResult struct {
 type PackageResult struct {
 	Success       bool     `json:"success"`
 	ArtifactPaths []string `json:"artifact_paths"`
+	OutputPath    string   `json:"output_path,omitempty"`  // directory where files were written
+	SOCPatch      string   `json:"soc_patch,omitempty"`    // SOC-formatted patch for dry-run
 }

@@ -240,33 +240,55 @@ func VerifyCodeActivity(ctx context.Context, generatedCode map[string]string, co
 }
 
 // PackageArtifactsActivity packages the generated code and artifacts
-func PackageArtifactsActivity(ctx context.Context, generatedCode map[string]string, irSpec *ir.IRSpec, projectID string) (PackageResult, error) {
+func PackageArtifactsActivity(ctx context.Context, generatedCode map[string]string, irSpec *ir.IRSpec, projectID string, dryRun bool, outputDir string) (PackageResult, error) {
 
 	result := PackageResult{
 		Success:       true,
 		ArtifactPaths: []string{},
 	}
 
-	// For now, just create artifact path references
-	// In a full implementation, this would:
-	// 1. Create a project directory structure
-	// 2. Write all generated files
-	// 3. Create package manifests
-	// 4. Generate documentation
-	// 5. Store in artifact storage (MinIO/S3)
-
-	for filename := range generatedCode {
-		artifactPath := fmt.Sprintf("projects/%s/%s", projectID, filename)
-		result.ArtifactPaths = append(result.ArtifactPaths, artifactPath)
+	if outputDir == "" {
+		outputDir = "./generated"
 	}
 
-	// Add IR spec as artifact
-	irSpecPath := fmt.Sprintf("projects/%s/ir_spec.json", projectID)
-	result.ArtifactPaths = append(result.ArtifactPaths, irSpecPath)
+	if dryRun {
+		// Generate SOC-formatted patch for dry-run output
+		var socPatch strings.Builder
+		socPatch.WriteString("=== Generated Code (Dry Run) ===\n\n")
 
-	// Add README
-	readmePath := fmt.Sprintf("projects/%s/README.md", projectID)
-	result.ArtifactPaths = append(result.ArtifactPaths, readmePath)
+		for filename, content := range generatedCode {
+			socPatch.WriteString(fmt.Sprintf("--- /dev/null\n+++ %s\n", filename))
+			socPatch.WriteString("@@ -0,0 +1," + fmt.Sprintf("%d", strings.Count(content, "\n")+1) + " @@\n")
+
+			// Add each line with + prefix
+			for _, line := range strings.Split(content, "\n") {
+				socPatch.WriteString("+" + line + "\n")
+			}
+			socPatch.WriteString("\n")
+		}
+
+		result.SOCPatch = socPatch.String()
+		result.OutputPath = "(dry-run - no files written)"
+	} else {
+		// Write files to actual output directory
+		projectDir := fmt.Sprintf("%s/%s", outputDir, projectID)
+		result.OutputPath = projectDir
+
+		// In a full implementation, this would actually write files
+		// For now, just create artifact path references
+		for filename := range generatedCode {
+			artifactPath := fmt.Sprintf("%s/%s", projectDir, filename)
+			result.ArtifactPaths = append(result.ArtifactPaths, artifactPath)
+		}
+
+		// Add IR spec as artifact
+		irSpecPath := fmt.Sprintf("%s/ir_spec.json", projectDir)
+		result.ArtifactPaths = append(result.ArtifactPaths, irSpecPath)
+
+		// Add README
+		readmePath := fmt.Sprintf("%s/README.md", projectDir)
+		result.ArtifactPaths = append(result.ArtifactPaths, readmePath)
+	}
 
 	return result, nil
 }
