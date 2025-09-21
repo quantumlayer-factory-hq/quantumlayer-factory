@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/quantumlayer/factory/kernel/soc"
+	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/soc"
 )
 
 func main() {

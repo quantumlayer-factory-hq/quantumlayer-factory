@@ -1,17 +1,17 @@
-version: '3.8'
-
 services:
   # Temporal for workflow orchestration
   temporal:
-    image: temporalio/auto-setup:1.22
+    image: temporalio/auto-setup:1.28.1
     ports:
       - "7233:7233"
     environment:
-      - DB=postgresql
+      - DB=postgres12
       - DB_PORT=5432
       - POSTGRES_USER=temporal
       - POSTGRES_PWD=temporal
       - POSTGRES_SEEDS=postgres
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
     depends_on:
       postgres:
         condition: service_healthy
@@ -24,7 +24,7 @@ services:
       retries: 30
 
   temporal-ui:
-    image: temporalio/ui:latest
+    image: temporalio/ui:2.34.0
     ports:
       - "8088:8080"
     environment:
@@ -35,23 +35,22 @@ services:
     networks:
       - factory-net
 
-  # PostgreSQL for state
+  # PostgreSQL for state and Temporal
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16
     ports:
       - "5432:5432"
     environment:
-      - POSTGRES_USER=factory
-      - POSTGRES_PASSWORD=factory123
-      - POSTGRES_DB=factory
-      - POSTGRES_MULTIPLE_DATABASES=temporal
+      - POSTGRES_USER=temporal
+      - POSTGRES_PASSWORD=temporal
+      - POSTGRES_DB=temporal
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./scripts/dev/init-postgres.sh:/docker-entrypoint-initdb.d/init-postgres.sh
     networks:
       - factory-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U factory"]
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -117,7 +116,7 @@ services:
       - "8080:8080"
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
-      - POSTGRES_DSN=postgres://factory:factory123@postgres:5432/factory?sslmode=disable
+      - POSTGRES_DSN=postgres://temporal:temporal@postgres:5432/factory?sslmode=disable
       - REDIS_ADDR=redis:6379
       - QDRANT_ADDR=http://qdrant:6333
       - MINIO_ENDPOINT=minio:9000
