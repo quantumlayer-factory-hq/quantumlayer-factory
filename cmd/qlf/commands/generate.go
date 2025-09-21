@@ -23,6 +23,9 @@ var (
 	flagAsync          bool
 	flagOverlays       []string
 	flagSuggestOverlay bool
+	flagProvider       string
+	flagModel          string
+	flagCompare        bool
 )
 
 func NewGenerateCmd() *cobra.Command {
@@ -39,6 +42,9 @@ func NewGenerateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&flagAsync, "async", false, "Return immediately with WorkflowID; use 'qlf status' to follow")
 	cmd.Flags().StringSliceVar(&flagOverlays, "overlay", []string{}, "Apply specific overlays (e.g., --overlay fintech,pci)")
 	cmd.Flags().BoolVar(&flagSuggestOverlay, "suggest-overlays", false, "Show suggested overlays without generating code")
+	cmd.Flags().StringVar(&flagProvider, "provider", "", "LLM provider (aws, azure, auto)")
+	cmd.Flags().StringVar(&flagModel, "model", "", "Specific model to use (claude-3-sonnet, gpt-4, etc.)")
+	cmd.Flags().BoolVar(&flagCompare, "compare", false, "Generate with multiple providers for comparison")
 	return cmd
 }
 
@@ -90,6 +96,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		Verbose:   flagVerbose,
 		OutputDir: flagOutput,
 		Overlays:  flagOverlays,
+		Provider:  flagProvider,
+		Model:     flagModel,
+		Compare:   flagCompare,
 	}
 
 	we, err := c.ExecuteWorkflow(context.Background(), opts, wf.FactoryWorkflow, input)

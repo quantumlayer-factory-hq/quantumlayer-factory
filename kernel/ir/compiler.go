@@ -129,6 +129,9 @@ func (c *Compiler) CompileWithOverlays(brief string, overlays []string) (*Compil
 	// Add the explicitly specified overlays
 	result.RequiredOverlays = append(result.RequiredOverlays, overlays...)
 
+	// Deduplicate required overlays
+	result.RequiredOverlays = c.overlayDetector.deduplicateStrings(result.RequiredOverlays)
+
 	// Remove duplicates from suggested overlays that are already in required
 	filteredSuggested := []string{}
 	for _, suggested := range result.SuggestedOverlays {

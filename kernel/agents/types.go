@@ -44,6 +44,7 @@ type GenerationRequest struct {
 	Target      GenerationTarget     `json:"target"`
 	Options     GenerationOptions    `json:"options"`
 	Context     map[string]interface{} `json:"context,omitempty"`
+	Overlays    []string             `json:"overlays,omitempty"`
 }
 
 // GenerationTarget specifies what to generate
@@ -99,6 +100,17 @@ type GenerationMetadata struct {
 	FilesCreated  int               `json:"files_created"`
 	TemplatesUsed []string          `json:"templates_used"`
 	Config        map[string]string `json:"config,omitempty"`
+	LLMUsage      *LLMUsageMetadata `json:"llm_usage,omitempty"`
+}
+
+// LLMUsageMetadata contains information about LLM usage during generation
+type LLMUsageMetadata struct {
+	Provider         string  `json:"provider"`
+	Model           string  `json:"model"`
+	PromptTokens    int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	TotalTokens     int     `json:"total_tokens"`
+	Cost            float64 `json:"cost"`
 }
 
 // ValidationResult contains the result of validating generated code

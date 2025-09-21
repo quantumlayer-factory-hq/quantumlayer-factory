@@ -5,13 +5,17 @@ import (
 	"sync"
 
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/ir"
+	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/llm"
+	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/prompts"
 )
 
 // AgentFactory implements the Factory interface
 type AgentFactory struct {
-	mu       sync.RWMutex
-	creators map[AgentType]AgentCreator
-	agents   map[AgentType]Agent
+	mu             sync.RWMutex
+	creators       map[AgentType]AgentCreator
+	agents         map[AgentType]Agent
+	llmClient      llm.Client
+	promptComposer *prompts.PromptComposer
 }
 
 // NewFactory creates a new agent factory
@@ -22,11 +26,31 @@ func NewFactory() *AgentFactory {
 	}
 }
 
+// NewFactoryWithLLM creates a new agent factory with LLM capabilities
+func NewFactoryWithLLM(llmClient llm.Client, promptComposer *prompts.PromptComposer) *AgentFactory {
+	return &AgentFactory{
+		creators:       make(map[AgentType]AgentCreator),
+		agents:         make(map[AgentType]Agent),
+		llmClient:      llmClient,
+		promptComposer: promptComposer,
+	}
+}
+
 // CreateAgent creates an agent of the specified type
 func (f *AgentFactory) CreateAgent(agentType AgentType) (Agent, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	// If LLM is available, create LLM-enabled agents
+	if f.llmClient != nil && f.promptComposer != nil {
+		agent := f.createLLMAgent(agentType)
+		if agent != nil {
+			f.agents[agentType] = agent
+			return agent, nil
+		}
+	}
+
+	// Fallback to standard creator-based agents
 	creator, exists := f.creators[agentType]
 	if !exists {
 		return nil, fmt.Errorf("agent type %s not registered", agentType)
@@ -35,6 +59,24 @@ func (f *AgentFactory) CreateAgent(agentType AgentType) (Agent, error) {
 	agent := creator()
 	f.agents[agentType] = agent
 	return agent, nil
+}
+
+// createLLMAgent creates an LLM-enabled agent for the given type
+func (f *AgentFactory) createLLMAgent(agentType AgentType) Agent {
+	switch agentType {
+	case AgentTypeBackend:
+		return NewBackendAgentWithLLM(f.llmClient, f.promptComposer)
+	case AgentTypeFrontend:
+		return NewFrontendAgentWithLLM(f.llmClient, f.promptComposer)
+	case AgentTypeDatabase:
+		return NewDatabaseAgentWithLLM(f.llmClient, f.promptComposer)
+	case AgentTypeAPI:
+		return NewAPIAgentWithLLM(f.llmClient, f.promptComposer)
+	case AgentTypeTest:
+		return NewTestAgentWithLLM(f.llmClient, f.promptComposer)
+	default:
+		return nil
+	}
 }
 
 // GetSupportedTypes returns all supported agent types
@@ -215,6 +257,14 @@ func RegisterDefaultAgents() error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to register API agent: %w", err)
+	}
+
+	// Register Test agent
+	err = DefaultFactory.RegisterAgent(AgentTypeTest, func() Agent {
+		return NewTestAgent()
+	})
+	if err != nil {
+		return fmt.Errorf("failed to register test agent: %w", err)
 	}
 
 	return nil

@@ -15,7 +15,7 @@ func TestParseActivityDirectly(t *testing.T) {
 	brief := "Create a Go API with user authentication"
 	config := map[string]interface{}{}
 
-	result, err := ParseBriefActivity(ctx, brief, config)
+	result, err := ParseBriefActivity(ctx, brief, []string{}, config)
 
 	require.NoError(t, err)
 	assert.NotNil(t, result)
@@ -84,10 +84,13 @@ func TestGenerateCodeActivityDirectly(t *testing.T) {
 		},
 	}
 
-	result, err := GenerateCodeActivity(ctx, irSpec, map[string]interface{}{})
+	result, err := GenerateCodeActivity(ctx, irSpec, []string{}, map[string]interface{}{}, "template", "")
 
 	require.NoError(t, err)
-	assert.True(t, result.Success)
+	if !result.Success {
+		t.Logf("Generation failed. Errors: %v, Warnings: %v", result.Errors, result.Warnings)
+	}
+	assert.True(t, result.Success, "Generation should succeed")
 	// Backend agent will generate code when fully implemented
 	// For now we just verify the activity completes successfully
 }

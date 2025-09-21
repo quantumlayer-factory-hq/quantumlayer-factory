@@ -113,10 +113,18 @@
 
 ### Next Development Priorities
 
-#### ⏳ Multi-Agent Pipeline (NEXT - Week 3)
-- [ ] **Frontend Agent** - React/Vue/Angular code generation
-- [ ] **Database Agent** - Schema, migrations, seeds
-- [ ] **DevOps Agent** - Docker, K8s, CI/CD generation
+#### 🚧 Multi-Provider LLM Integration (CURRENT - Week 3)
+- [ ] **AWS Bedrock Client** - Claude 3 Haiku/Sonnet/3.5 Sonnet (London region)
+- [ ] **Azure OpenAI Client** - GPT-4 Turbo, GPT-3.5 Turbo (UK South)
+- [ ] **Provider Router** - Multi-provider selection and failover
+- [ ] **Agent LLM Integration** - Replace templates with AI generation
+- [ ] **Response Caching** - Redis-based caching for cost optimization
+- [ ] **Cost Tracking** - Monitor usage across providers
+
+#### ⏳ Enhanced Multi-Agent Pipeline (NEXT - Week 4)
+- [ ] **Frontend Agent** - React/Vue/Angular via LLM generation
+- [ ] **Database Agent** - Schema, migrations via LLM
+- [ ] **DevOps Agent** - Docker, K8s, CI/CD via LLM
 
 #### ✅ Docker Environment (COMPLETED)
 - [x] **Infrastructure Services**
@@ -210,11 +218,25 @@ The system is now capable of taking a natural language description like "Create 
 4. **Orchestrating** the entire pipeline through Temporal workflows
 5. **Delivering** production-ready code with proper error handling, audit logging, and security patterns
 
-Current capability example:
+**Week 2 Capability (Template-Based):**
 ```bash
 qlf generate "Build a HIPAA-compliant patient data API" --overlay healthcare,hipaa --dry-run
 # ✅ Automatic overlay detection and application
 # ✅ Healthcare-specific data models and security patterns
 # ✅ HIPAA compliance validation and audit logging
-# ✅ Production-ready FastAPI code with proper encryption
+# ✅ Production-ready FastAPI code with proper encryption (template-based)
+```
+
+**Week 3 Target (LLM-Powered):**
+```bash
+# Multi-provider AI generation
+qlf generate "Build payment API" --provider bedrock --model sonnet   # Claude 3 Sonnet
+qlf generate "Build payment API" --provider azure --model gpt4       # GPT-4 Turbo
+
+# Provider comparison
+qlf generate "Complex system" --compare bedrock,azure                # Compare approaches
+
+# Cost-optimized generation
+qlf generate "Simple CRUD" --provider bedrock --model haiku          # Fast, cheap
+qlf generate "Architecture design" --provider azure --model gpt4     # Advanced reasoning
 ```

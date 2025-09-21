@@ -3,15 +3,19 @@
 ## Overview
 Building on completed Phase 1 (SOC Parser) and Phase 2 Core (IR + Agents), this roadmap delivers the full production system.
 
-## Current Status: Week 2 Complete ✅
+## Current Status: Week 4 Complete ✅
 - ✅ SOC Parser (kernel/soc/) - 11/11 tests
 - ✅ IR Compiler (kernel/ir/) - 20+ tests (enhanced with overlay support)
-- ✅ Agent Factory + Backend Agent (kernel/agents/) - 6/6 tests
+- ✅ Agent Factory + Multi-Agent Pipeline (kernel/agents/) - All tests passing
 - ✅ Docker Infrastructure (Postgres, Redis, Temporal, Qdrant, MinIO)
-- ✅ Temporal Workflows (kernel/workflows/) - 8/8 tests
-- ✅ CLI Interface (cmd/qlf/) - 5/5 tests + overlay commands
+- ✅ Temporal Workflows (kernel/workflows/) - 8/8 tests + LLM integration
+- ✅ CLI Interface (cmd/qlf/) - 5/5 tests + overlay commands + LLM flags
 - ✅ Overlay System (overlays/) - 15/15 tests + 6 production overlays
 - ✅ Prompt Enhancement (kernel/prompts/) - 30/30 tests
+- ✅ Multi-Provider LLM Integration (kernel/llm/) - AWS Bedrock + Azure OpenAI
+- ✅ Complete Multi-Agent Pipeline - Backend, Frontend, Database, API, Test agents
+- ✅ LLM Workflow Integration - CLI flags → Workflow → Agents
+- ✅ Production-Ready LLM Features - Caching, budget tracking, failover
 
 ---
 
@@ -214,90 +218,284 @@ qlf generate "Build a payment processing API with fraud detection" --overlay fin
 
 ---
 
-## Week 3: Multi-Agent Pipeline
-**Goal**: Frontend, Database, DevOps agents
+## Week 3: Multi-Provider LLM Integration ✅ COMPLETE
+**Goal**: Connect agents to AWS Bedrock (Claude) and Azure OpenAI (GPT-4) with UK/EU regions
+**Status**: ✅ COMPLETED - Full LLM integration with multi-provider support and CLI flags
 
-### W3.1: Frontend Agent (3 days)
+### W3.1: Core LLM Infrastructure (2 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
+**Deliverables**:
+```
+kernel/llm/
+├── types.go              # LLM interfaces and types ✅
+├── client.go             # Generic LLM client interface ✅
+├── bedrock.go            # AWS Bedrock implementation (eu-west-2) ✅
+├── azure_openai.go       # Azure OpenAI implementation (uksouth) ✅
+├── provider_router.go    # Route requests to providers ✅
+├── config.go             # Multi-provider configuration ✅
+├── cache.go              # Redis caching (shared) ✅
+├── budget.go             # Budget tracking and usage monitoring ✅
+└── llm_test.go          # Provider-agnostic tests ✅
+```
+
+**Acceptance Criteria**:
+- ✅ Generic LLM interface supporting multiple providers
+- ✅ AWS Bedrock client with Claude models (London region)
+- ✅ Azure OpenAI client with GPT-4 (UK South)
+- ✅ Provider selection and failover logic
+- ✅ Response caching with Redis
+- ✅ Budget tracking for cost optimization
+
+### W3.2: Provider Implementations (3 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
+**Deliverables**:
+```
+AWS Bedrock Integration:
+├── Claude 3 Haiku (anthropic.claude-3-haiku-20240307-v1:0) ✅
+├── Claude 3 Sonnet (anthropic.claude-3-sonnet-20240229-v1:0) ✅
+├── Claude 3.7 Sonnet (anthropic.claude-3-7-sonnet-20250219-v1:0) ✅
+└── Model selection based on task complexity ✅
+
+Azure OpenAI Integration:
+├── GPT-4 Turbo deployment ✅
+├── GPT-3.5 Turbo deployment ✅
+├── GPT-4.1, GPT-5, o4-mini models ✅
+├── Streaming response support ✅
+└── Cost tracking per deployment ✅
+```
+
+**Acceptance Criteria**:
+- ✅ Bedrock Claude integration with all model variants
+- ✅ Azure OpenAI GPT-4 integration with full model suite
+- ✅ Unified prompt execution across providers
+- ✅ Response streaming for long generations
+- ✅ Cost tracking per provider and model
+- ✅ Budget limits and usage monitoring
+
+### W3.3: Agent LLM Integration (2 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
+**Deliverables**:
+```
+kernel/agents/ updates:
+├── backend.go            # LLM-powered backend generation ✅
+├── frontend.go           # React/Vue/Angular via LLM ✅
+├── database.go           # Schema generation via LLM ✅
+├── factory.go            # Provider-aware agent creation ✅
+└── types.go              # LLM usage metadata tracking ✅
+
+cmd/qlf/commands/
+├── generate.go           # Provider/model CLI flags ✅
+└── workflows/factory_workflow.go # LLM configuration support ✅
+```
+
+**Acceptance Criteria**:
+- ✅ Backend agent using LLM instead of templates
+- ✅ Frontend agent implementation with React/Vue/Angular
+- ✅ Database agent with schema/migration generation
+- ✅ SOC parser integration for output validation
+- ✅ Provider selection via CLI flags (--provider, --model, --compare)
+- ✅ LLM-enabled factory with fallback to templates
+
+**Week 3 Success Metrics**: ✅ ACHIEVED
+```bash
+# Multi-provider generation
+qlf generate "Create payment API" --provider aws --model claude-3-sonnet
+qlf generate "Create payment API" --provider azure --model gpt-4
+
+# Provider comparison (infrastructure ready)
+qlf generate "Create API" --compare --dry-run
+
+# Model selection
+qlf generate "Simple CRUD" --model haiku              # Fast generation
+qlf generate "Complex system" --model sonnet          # Advanced reasoning
+
+# ✅ CLI flags working and processing correctly
+# ✅ Agent LLM infrastructure complete
+# ✅ Template fallback for non-LLM mode
+```
+
+**Key Deliverables Achieved**:
+- **Complete Multi-Provider Architecture**: AWS Bedrock + Azure OpenAI with UK regions
+- **9 LLM Package Files**: Types, clients, router, cache, config, budget tracking
+- **3 LLM-Enabled Agents**: Backend, Frontend, Database with generateWithLLM methods
+- **CLI Integration**: Provider/model flags with workflow support
+- **Production-Ready Foundation**: Budget tracking, caching, failover, usage monitoring
+- **Backward Compatibility**: Template fallback when LLM not available
+
+## Week 4: Complete Multi-Agent Pipeline ✅ COMPLETE
+**Goal**: Wire LLM to workflows + implement remaining specialized agents
+**Status**: ✅ COMPLETED - Full multi-agent pipeline with LLM integration
+
+### W4.1: Workflow LLM Integration (1 day) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
+**Deliverables**:
+```
+kernel/workflows/
+├── activities.go         # Wire LLM clients to GenerateCodeActivity ✅
+├── factory_workflow.go   # Pass provider/model config through workflow ✅
+├── llm_integration.go    # LLM client factory for workflow context ✅
+```
+
+**Acceptance Criteria**:
+- ✅ LLM client initialization in workflow activities
+- ✅ Provider/model configuration passed from CLI to agents
+- ✅ LLM-enabled agents actually used instead of templates
+- ✅ Fallback to templates when LLM unavailable
+
+### W4.2: API Agent Implementation (2 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
 **Deliverables**:
 ```
 kernel/agents/
-├── frontend.go           # React/Vue/Angular code generation
-├── frontend_test.go      # Frontend agent tests
-└── templates/
-    ├── react/            # React component templates
-    ├── vue/              # Vue component templates
-    └── angular/          # Angular component templates
+├── api.go                # OpenAPI spec, GraphQL schema generation ✅
+├── LLM integration       # generateWithLLM + templates fallback ✅
+├── Factory registration  # API agent in factory ✅
 ```
 
-### W3.2: Database Agent (2 days)
+**Acceptance Criteria**:
+- ✅ OpenAPI 3.0 spec generation from IR
+- ✅ GraphQL schema generation
+- ✅ API documentation generation with templates
+- ✅ LLM-powered endpoint descriptions (when available)
+
+### W4.3: Test Agent Implementation (2 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
 **Deliverables**:
 ```
 kernel/agents/
-├── database.go           # Schema, migrations, seeds
-├── database_test.go      # Database agent tests
-└── templates/
-    ├── postgres/         # PostgreSQL templates
-    ├── mysql/            # MySQL templates
-    └── mongodb/          # MongoDB templates
+├── test.go               # Unit tests, integration tests via LLM ✅
+├── Multi-language support # Go, Python, JavaScript/TypeScript ✅
+├── Factory registration  # Test agent in factory ✅
 ```
 
-### W3.3: DevOps Agent (2 days)
-**Deliverables**:
+**Acceptance Criteria**:
+- ✅ Unit test generation for generated code
+- ✅ Multi-language test template support
+- ✅ Test data generation patterns
+- ✅ Framework-specific test patterns (Go, Python, JS)
+
+### W4.4: DevOps Agent (Deferred to Week 6+)
+**Status**: ⏳ Deferred to Week 6
+**Rationale**: Focus on verification mesh and quality gates first
+**Deliverables**: Docker, K8s, CI/CD pipeline generation
+
+**Week 4 Success Metrics**: ✅ ACHIEVED
+```bash
+# Multi-agent pipeline with LLM
+qlf generate "user management API" --provider aws --model claude-3-sonnet
+# ✅ Generates: Backend + API specs + Tests using LLM
+
+# Template fallback working
+qlf generate "payment service" --dry-run
+# ✅ Generates: Code using templates when LLM unavailable
+
+# All agent types working
+Backend ✅ Frontend ✅ Database ✅ API ✅ Test ✅
 ```
-kernel/agents/
-├── devops.go             # Docker, K8s, CI/CD generation
-├── devops_test.go        # DevOps agent tests
-└── templates/
-    ├── docker/           # Dockerfile templates
-    ├── k8s/              # Kubernetes manifests
-    └── cicd/             # GitHub Actions/GitLab CI
-```
+
+**Key Deliverables Achieved**:
+- **5 Production Agents**: Backend, Frontend, Database, API, Test (all LLM-enabled)
+- **Complete LLM Pipeline**: CLI flags → Workflow → Agents → Generation
+- **Multi-Language Support**: Go, Python, JavaScript/TypeScript test generation
+- **Robust Fallbacks**: Template-based generation when LLM not available
+- **Factory Integration**: All agents registered and accessible via factory pattern
 
 ---
 
-## Week 4: Verification Mesh v1
-**Goal**: Multi-stage verification pipeline
+## Week 5: Verification Mesh v1 ✅ COMPLETED
+**Goal**: Multi-stage verification pipeline (enhanced for LLM-generated code)
 
-### W4.1: Unit Test Gate (2 days)
+**Status**: ✅ COMPLETED - Full verification mesh with LLM repair capabilities
+
+### W5.1: Unit Test Gate (2 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
 **Deliverables**:
 ```
 kernel/verifier/
-├── unit_gate.go          # Unit test execution gate
-├── runners/
-│   ├── go_test.go        # Go test runner
-│   ├── jest.go           # Jest/Vitest runner
-│   └── pytest.go        # Pytest runner
-└── unit_gate_test.go     # Unit gate tests
+├── unit_gate.go          # Unit test execution gate ✅
+├── types.go              # Verification mesh types ✅
+├── pipeline.go           # Pipeline orchestration ✅
+└── integration_test.go   # Complete integration tests ✅
 ```
 
-### W4.2: Contract Test Gate (2 days)
+**Acceptance Criteria**:
+- ✅ Multi-language test runner support (Go, Python, JS/TS)
+- ✅ Test execution and result parsing
+- ✅ Integration with verification pipeline
+- ✅ Gate interface implementation
+
+### W5.2: Contract Test Gate (2 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
 **Deliverables**:
 ```
 kernel/verifier/
-├── contract_gate.go      # API contract verification
-├── runners/
-│   ├── openapi.go        # OpenAPI validation
-│   ├── pact.go           # Pact contract testing
-│   └── postman.go        # Postman collection runner
-└── contract_gate_test.go # Contract gate tests
+├── contract_gate.go      # API contract verification ✅
+├── OpenAPI validator     # OpenAPI specification validation ✅
+├── Contract specs        # Contract specification handling ✅
+└── Coverage tracking     # API endpoint coverage metrics ✅
 ```
 
-### W4.3: Repair Loop (3 days)
+**Acceptance Criteria**:
+- ✅ OpenAPI/Swagger specification validation
+- ✅ Contract testing framework integration
+- ✅ API endpoint coverage tracking
+- ✅ Multi-format contract support
+
+### W5.3: LLM-Enhanced Repair Loop (3 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
 **Deliverables**:
 ```
-kernel/repair/
-├── repair_agent.go       # Failure analysis and repair
-├── qdrant_client.go      # Vector search for similar failures
-├── repair_strategies.go  # Common repair patterns
-└── repair_test.go        # Repair loop tests
+kernel/verifier/
+├── repair_loop.go        # LLM-powered failure analysis and repair ✅
+├── Repair strategies     # Issue classification and repair patterns ✅
+├── LLM integration       # Claude/GPT-powered code fixing ✅
+└── Iterative repair      # Multi-iteration repair attempts ✅
 ```
+
+**Acceptance Criteria**:
+- ✅ LLM-powered issue analysis and repair generation
+- ✅ Confidence-based automatic fix application
+- ✅ Iterative repair with feedback loops
+- ✅ Safety-first repair strategies with rollback
+
+**Week 5 Success Metrics**: ✅ ACHIEVED
+```bash
+# Complete verification pipeline
+qlf verify "generated_project/" --pipeline unit,contract,repair
+# ✅ Executes: Unit tests → Contract validation → Auto-repair
+
+# Multi-language testing
+qlf verify "go_service/" "python_api/" "js_frontend/"
+# ✅ Runs appropriate test frameworks for each language
+
+# LLM repair integration
+qlf verify "failing_project/" --auto-repair --confidence 0.8
+# ✅ Automatically fixes issues above confidence threshold
+```
+
+**Key Deliverables Achieved**:
+- **Complete Verification Mesh**: Unit, Contract, and Repair gates
+- **Multi-Language Support**: Go, Python, JavaScript/TypeScript test execution
+- **LLM Auto-Repair**: Claude/GPT-powered automatic issue fixing
+- **Pipeline Orchestration**: Sequential and parallel gate execution
+- **Quality Scoring**: A-F grade system with comprehensive metrics
+- **Integration Testing**: Full end-to-end pipeline verification
 
 ---
 
-## Week 5: Preview Deploy
+## Week 6: Preview Deploy
 **Goal**: Ephemeral environment deployment
 
-### W5.1: Container Builder (3 days)
+### W6.1: Container Builder (3 days)
 **Deliverables**:
 ```
 services/builder/
@@ -307,7 +505,7 @@ services/builder/
 └── builder_test.go       # Builder service tests
 ```
 
-### W5.2: K8s Deploy Service (2 days)
+### W6.2: K8s Deploy Service (2 days)
 **Deliverables**:
 ```
 services/deploy/
@@ -317,7 +515,7 @@ services/deploy/
 └── deploy_test.go        # Deployment tests
 ```
 
-### W5.3: Preview URLs (2 days)
+### W6.3: Preview URLs (2 days)
 **Deliverables**:
 - Dynamic subdomain allocation
 - TLS certificate provisioning
@@ -326,10 +524,10 @@ services/deploy/
 
 ---
 
-## Week 6: Capsule Packager
+## Week 7: Capsule Packager
 **Goal**: .qlcapsule format with SBOM and attestation
 
-### W6.1: Capsule Format (3 days)
+### W7.1: Capsule Format (3 days)
 **Deliverables**:
 ```
 services/capsule/
@@ -341,19 +539,19 @@ services/capsule/
 └── packager_test.go      # Packaging tests
 ```
 
-### W6.2: Documentation Generator (2 days)
+### W7.2: Documentation Generator (2 days)
 **Deliverables**:
 ```
 kernel/agents/
-├── documentation.go      # Auto-documentation agent
-├── templates/
-│   ├── api_docs.tmpl     # API documentation template
-│   ├── readme.tmpl       # README template
-│   └── deployment.tmpl   # Deployment guide template
+├── documentation.go      # Auto-documentation agent (LLM-powered)
+├── prompts/
+│   ├── api_docs.tmpl     # API documentation prompts
+│   ├── readme.tmpl       # README generation prompts
+│   └── deployment.tmpl   # Deployment guide prompts
 └── documentation_test.go # Documentation tests
 ```
 
-### W6.3: Delivery Channels (2 days)
+### W7.3: Delivery Channels (2 days)
 **Deliverables**:
 - GitHub repository creation
 - Container registry push
@@ -362,91 +560,106 @@ kernel/agents/
 
 ---
 
-## Week 7: Observability
+## Week 8: Observability
 **Goal**: Production-ready monitoring and metrics
 
-### W7.1: OpenTelemetry Integration (3 days)
+### W8.1: OpenTelemetry Integration (3 days)
 **Deliverables**:
 ```
 pkg/observability/
 ├── tracing.go            # Distributed tracing setup
-├── metrics.go            # Prometheus metrics
+├── metrics.go            # Prometheus metrics + LLM metrics
 ├── logging.go            # Structured logging
+├── llm_metrics.go        # LLM-specific monitoring
 └── otel_test.go          # Observability tests
 ```
 
-### W7.2: Dashboards (2 days)
+### W8.2: Dashboards (2 days)
 **Deliverables**:
 ```
 observability/
 ├── grafana/
 │   ├── factory-overview.json    # Main dashboard
 │   ├── agent-performance.json   # Agent metrics
+│   ├── llm-usage.json          # LLM provider metrics
 │   └── verification-gates.json  # Gate success rates
 └── prometheus/
-    └── rules.yaml        # Alerting rules
+    └── rules.yaml        # Alerting rules + LLM cost alerts
 ```
 
-### W7.3: Health Checks (2 days)
+### W8.3: Health Checks (2 days)
 **Deliverables**:
 - Service health endpoints
-- Dependency health monitoring
+- LLM provider health monitoring
 - Circuit breaker implementation
-- Graceful degradation
+- Graceful degradation with provider failover
 
 ---
 
-## Week 8: Design Partner Demo
+## Week 9: Design Partner Demo
 **Goal**: End-to-end demonstration ready
 
-### W8.1: Demo Scenarios (2 days)
+### W9.1: Demo Scenarios (2 days)
 **Deliverables**:
 ```
 demo/
 ├── scenarios/
-│   ├── fintech-api.md    # PCI-compliant payment API
-│   ├── healthcare-app.md # HIPAA-compliant patient portal
-│   └── ecommerce-mvp.md  # Full-stack e-commerce MVP
+│   ├── fintech-api.md    # PCI-compliant payment API with Claude
+│   ├── healthcare-app.md # HIPAA-compliant patient portal with GPT-4
+│   └── ecommerce-mvp.md  # Full-stack e-commerce MVP with provider comparison
 └── scripts/
     ├── demo-setup.sh     # Demo environment setup
     └── demo-run.sh       # Automated demo execution
 ```
 
-### W8.2: Performance Optimization (3 days)
+### W9.2: Performance Optimization (3 days)
 **Deliverables**:
+- LLM provider load balancing
+- Response caching optimization
 - Agent execution parallelization
 - Verification gate optimization
-- Caching layer implementation
 - Resource usage optimization
 
-### W8.3: Security Hardening (2 days)
+### W9.3: Security Hardening (2 days)
 **Deliverables**:
 - RBAC implementation
-- Audit logging
-- Secret management
+- LLM API key management
+- Audit logging for LLM usage
 - Network security policies
 
 ---
 
 ## Success Metrics
 
-### Week 1 Target:
+### Week 3 Target (NEW - LLM Integration):
 ```bash
-qlf generate "Create a user management API with authentication" --dry-run
-# Expected: 15-second end-to-end execution
+# Multi-provider LLM generation
+qlf generate "Create user API" --provider bedrock --model sonnet
+qlf generate "Create user API" --provider azure --model gpt4
+# Expected: Different solutions from Claude vs GPT-4
+
+# Provider comparison
+qlf generate "Complex payment system" --compare bedrock,azure
+# Expected: Side-by-side comparison of approaches
 ```
 
-### Week 4 Target:
+### Week 4 Target (Enhanced Multi-Agent):
 ```bash
-qlf generate "PCI-compliant payment processor" --overlay fintech,pci
-# Expected: Full verification mesh with repair loops
+qlf generate "Full-stack e-commerce platform" --overlay ecommerce --provider bedrock
+# Expected: Frontend + Backend + Database via LLM generation
 ```
 
-### Week 8 Target:
+### Week 5 Target (Verification Mesh):
+```bash
+qlf generate "PCI-compliant payment processor" --overlay fintech,pci --provider azure
+# Expected: LLM-generated code passing verification gates with repair loops
+```
+
+### Week 9 Target (Demo Ready):
 ```bash
 qlf generate "HIPAA-compliant patient portal with React frontend" \
-  --overlay healthcare,hipaa --deploy preview
-# Expected: Live preview URL in <5 minutes
+  --overlay healthcare,hipaa --provider bedrock --deploy preview
+# Expected: Live preview URL in <5 minutes with LLM-powered generation
 ```
 
 ---

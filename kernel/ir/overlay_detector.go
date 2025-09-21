@@ -73,7 +73,7 @@ func (d *OverlayDetector) detectDomainOverlays(brief string) []OverlaySuggestion
 		matches := pattern.FindAllString(brief, -1)
 		if len(matches) > 0 {
 			confidence := d.calculateDomainConfidence(domain, matches, brief)
-			if confidence > 0.3 { // Minimum threshold
+			if confidence >= 0.3 { // Minimum threshold
 				suggestion := OverlaySuggestion{
 					Name:       domain,
 					Type:       "domain",
@@ -154,9 +154,26 @@ func (d *OverlayDetector) calculateComplianceConfidence(compliance string, match
 
 	// Explicit compliance mentions get very high confidence
 	for _, match := range matches {
-		if len(match) > 3 && strings.Contains(match, compliance) {
+		if len(match) > 3 && (strings.Contains(match, compliance) || strings.Contains(compliance, strings.ToLower(match))) {
 			baseConfidence = 0.9
 			break
+		}
+	}
+
+	// Special case for explicit standards
+	lowerBrief := strings.ToLower(brief)
+	switch compliance {
+	case "pci":
+		if strings.Contains(lowerBrief, "pci-dss") || strings.Contains(lowerBrief, "pci dss") {
+			baseConfidence = 0.95
+		}
+	case "hipaa":
+		if strings.Contains(lowerBrief, "hipaa") {
+			baseConfidence = 0.95
+		}
+	case "gdpr":
+		if strings.Contains(lowerBrief, "gdpr") {
+			baseConfidence = 0.95
 		}
 	}
 
@@ -212,7 +229,7 @@ func (d *OverlayDetector) checkForWarnings(suggestions []OverlaySuggestion) []st
 		}
 	}
 
-	if complianceCount > 2 {
+	if complianceCount > 1 {
 		warnings = append(warnings, "Multiple compliance overlays detected - verify requirements are compatible")
 	}
 
@@ -253,8 +270,8 @@ func (d *OverlayDetector) deduplicateStrings(strings []string) []string {
 // initializeDomainPatterns creates regex patterns for domain detection
 func initializeDomainPatterns() map[string]*regexp.Regexp {
 	patterns := map[string]string{
-		"fintech": `(?i)\b(payment|banking|financial|fintech|transaction|credit|debit|card|wallet|investment|trading|loan|mortgage|insurance|crypto|blockchain|bitcoin)\b`,
-		"healthcare": `(?i)\b(healthcare|medical|patient|hospital|clinic|doctor|physician|nurse|health|treatment|diagnosis|prescription|therapy|hipaa|phi|ehr|emr)\b`,
+		"fintech": `(?i)\b(payment|banking|financial|fintech|transaction|credit|debit|card|wallet|investment|trading|loan|mortgage|insurance|crypto|blockchain|bitcoin|gateway|processor|processing)\b`,
+		"healthcare": `(?i)\b(healthcare|medical|patient|hospital|clinic|doctor|physician|nurse|health|treatment|diagnosis|prescription|therapy|hipaa|phi|ehr|emr|portal|records)\b`,
 		"ecommerce": `(?i)\b(ecommerce|e-commerce|shop|store|product|inventory|cart|checkout|order|customer|retail|marketplace|catalog|purchase|sale)\b`,
 	}
 
@@ -269,7 +286,7 @@ func initializeDomainPatterns() map[string]*regexp.Regexp {
 // initializeCompliancePatterns creates regex patterns for compliance detection
 func initializeCompliancePatterns() map[string]*regexp.Regexp {
 	patterns := map[string]string{
-		"pci": `(?i)\b(pci|pci-dss|card data|payment card|cardholder|card security|payment security)\b`,
+		"pci": `(?i)\b(pci|pci-dss|pci\s+dss|card data|payment card|cardholder|card security|payment security)\b`,
 		"hipaa": `(?i)\b(hipaa|phi|protected health|health information|medical privacy|patient privacy)\b`,
 		"gdpr": `(?i)\b(gdpr|data protection|privacy|personal data|consent|data subject|right to be forgotten|data portability)\b`,
 	}

@@ -20,6 +20,9 @@ type FactoryWorkflowInput struct {
 	Verbose      bool                   `json:"verbose,omitempty"`
 	OutputDir    string                 `json:"output_dir,omitempty"`
 	Overlays     []string               `json:"overlays,omitempty"`
+	Provider     string                 `json:"provider,omitempty"`
+	Model        string                 `json:"model,omitempty"`
+	Compare      bool                   `json:"compare,omitempty"`
 }
 
 // CLI-compatible aliases for easier integration
@@ -105,9 +108,9 @@ func FactoryWorkflow(ctx workflow.Context, input FactoryWorkflowInput) (*Factory
 	result.Warnings = append(result.Warnings, validationResult.Warnings...)
 
 	// Step 3: Generate code using agents
-	logger.Info("Step 3: Generating code with agents")
+	logger.Info("Step 3: Generating code with agents", "provider", input.Provider, "model", input.Model)
 	var codeGenResult CodeGenerationResult
-	err = workflow.ExecuteActivity(ctx, GenerateCodeActivity, irSpec, input.Overlays, input.Config).Get(ctx, &codeGenResult)
+	err = workflow.ExecuteActivity(ctx, GenerateCodeActivity, irSpec, input.Overlays, input.Config, input.Provider, input.Model).Get(ctx, &codeGenResult)
 	if err != nil {
 		result.Success = false
 		result.Errors = append(result.Errors, "Failed to generate code: "+err.Error())

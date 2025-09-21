@@ -7,11 +7,15 @@ import (
 	"time"
 
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/ir"
+	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/llm"
+	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/prompts"
 )
 
 // BackendAgent specializes in generating backend code
 type BackendAgent struct {
 	*BaseAgent
+	llmClient    llm.Client
+	promptComposer *prompts.PromptComposer
 }
 
 // NewBackendAgent creates a new backend agent
@@ -30,6 +34,27 @@ func NewBackendAgent() *BackendAgent {
 
 	return &BackendAgent{
 		BaseAgent: NewBaseAgent(AgentTypeBackend, "1.0.0", capabilities),
+	}
+}
+
+// NewBackendAgentWithLLM creates a new backend agent with LLM capabilities
+func NewBackendAgentWithLLM(llmClient llm.Client, promptComposer *prompts.PromptComposer) *BackendAgent {
+	capabilities := []string{
+		"api_controllers",
+		"service_layer",
+		"data_models",
+		"middleware",
+		"authentication",
+		"database_migrations",
+		"error_handling",
+		"logging",
+		"configuration",
+	}
+
+	return &BackendAgent{
+		BaseAgent:      NewBaseAgent(AgentTypeBackend, "2.0.0", capabilities),
+		llmClient:      llmClient,
+		promptComposer: promptComposer,
 	}
 }
 
@@ -76,25 +101,33 @@ func (a *BackendAgent) Generate(ctx context.Context, req *GenerationRequest) (*G
 		backend.Framework = "fastapi"
 	}
 
-	// Generate based on the technology stack
-	switch backend.Language {
-	case "python":
-		err := a.generatePythonBackend(req, result)
+	// Generate based on LLM or fallback to templates
+	if a.llmClient != nil && a.promptComposer != nil {
+		err := a.generateWithLLM(ctx, req, result)
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate Python backend: %w", err)
+			return nil, fmt.Errorf("failed to generate backend with LLM: %w", err)
 		}
-	case "go":
-		err := a.generateGoBackend(req, result)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate Go backend: %w", err)
+	} else {
+		// Fallback to template-based generation
+		switch backend.Language {
+		case "python":
+			err := a.generatePythonBackend(req, result)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate Python backend: %w", err)
+			}
+		case "go":
+			err := a.generateGoBackend(req, result)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate Go backend: %w", err)
+			}
+		case "nodejs":
+			err := a.generateNodeBackend(req, result)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate Node.js backend: %w", err)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported backend language: %s", backend.Language)
 		}
-	case "nodejs":
-		err := a.generateNodeBackend(req, result)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate Node.js backend: %w", err)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported backend language: %s", backend.Language)
 	}
 
 	// Update metadata
@@ -130,6 +163,177 @@ func (a *BackendAgent) Validate(ctx context.Context, result *GenerationResult) (
 	}
 
 	return validation, nil
+}
+
+// generateWithLLM generates backend code using LLM
+func (a *BackendAgent) generateWithLLM(ctx context.Context, req *GenerationRequest, result *GenerationResult) error {
+	// Build prompt using the prompt composer
+	composeReq := prompts.ComposeRequest{
+		AgentType:   "backend",
+		IRSpec:      req.Spec,
+		Context:     req.Context,
+	}
+
+	promptResult, err := a.promptComposer.ComposePrompt(composeReq)
+	if err != nil {
+		return fmt.Errorf("failed to compose prompt: %w", err)
+	}
+
+	// Select model based on task complexity
+	model := a.selectModel(req.Spec)
+
+	// Call LLM to generate code
+	llmReq := &llm.GenerateRequest{
+		Prompt:       promptResult.Prompt,
+		Model:        model,
+		MaxTokens:    8192, // Large enough for backend code
+		Temperature:  0.2,  // Low temperature for consistent code generation
+	}
+
+	response, err := a.llmClient.Generate(ctx, llmReq)
+	if err != nil {
+		return fmt.Errorf("LLM generation failed: %w", err)
+	}
+
+	// Parse the LLM response to extract individual files
+	files, err := a.parseGeneratedCode(response.Content, req.Spec)
+	if err != nil {
+		return fmt.Errorf("failed to parse generated code: %w", err)
+	}
+
+	// Add generated files to result
+	result.Files = append(result.Files, files...)
+
+	// Add generation metadata
+	result.Metadata.LLMUsage = &LLMUsageMetadata{
+		Provider:         string(response.Provider),
+		Model:           string(response.Model),
+		PromptTokens:    response.Usage.PromptTokens,
+		CompletionTokens: response.Usage.CompletionTokens,
+		TotalTokens:     response.Usage.TotalTokens,
+		Cost:            response.Usage.Cost,
+	}
+
+	return nil
+}
+
+// selectModel chooses the appropriate LLM model based on task complexity
+func (a *BackendAgent) selectModel(spec *ir.IRSpec) llm.Model {
+	// Calculate complexity score
+	complexity := 0
+	complexity += len(spec.API.Endpoints) * 2
+	complexity += len(spec.Data.Entities) * 3
+	complexity += len(spec.App.Features) * 2
+	complexity += len(spec.Data.Relationships) * 1
+
+	// Select model based on complexity
+	if complexity < 10 {
+		// Simple backend - use fast model
+		return llm.ModelClaudeHaiku
+	} else if complexity < 25 {
+		// Medium complexity - use balanced model
+		return llm.ModelClaudeSonnet
+	} else {
+		// Complex backend - use advanced model
+		return llm.ModelClaude37
+	}
+}
+
+// parseGeneratedCode parses LLM output into individual files
+func (a *BackendAgent) parseGeneratedCode(content string, spec *ir.IRSpec) ([]GeneratedFile, error) {
+	files := []GeneratedFile{}
+
+	// Look for code blocks marked with file paths
+	// Expected format: ```filename:path/to/file.ext
+	lines := strings.Split(content, "\n")
+	var currentFile *GeneratedFile
+	var codeLines []string
+
+	for _, line := range lines {
+		// Check for file delimiter
+		if strings.HasPrefix(line, "```") {
+			if currentFile != nil {
+				// End of current file
+				currentFile.Content = strings.Join(codeLines, "\n")
+				files = append(files, *currentFile)
+				currentFile = nil
+				codeLines = []string{}
+			} else if strings.Contains(line, ":") {
+				// Start of new file
+				parts := strings.SplitN(line[3:], ":", 2)
+				if len(parts) == 2 {
+					language := strings.TrimSpace(parts[0])
+					path := strings.TrimSpace(parts[1])
+
+					currentFile = &GeneratedFile{
+						Path:     path,
+						Type:     a.determineFileType(path),
+						Language: language,
+						Template: "llm_generated",
+					}
+				}
+			}
+		} else if currentFile != nil {
+			// Add line to current file
+			codeLines = append(codeLines, line)
+		}
+	}
+
+	// Handle last file if not closed
+	if currentFile != nil {
+		currentFile.Content = strings.Join(codeLines, "\n")
+		files = append(files, *currentFile)
+	}
+
+	// If no structured files found, create a single main file
+	if len(files) == 0 {
+		backend := spec.App.Stack.Backend
+		ext := a.getFileExtension(backend.Language)
+		mainFile := GeneratedFile{
+			Path:     fmt.Sprintf("main%s", ext),
+			Type:     "source",
+			Language: backend.Language,
+			Template: "llm_generated",
+			Content:  content,
+		}
+		files = append(files, mainFile)
+	}
+
+	return files, nil
+}
+
+// determineFileType determines the file type based on file extension
+func (a *BackendAgent) determineFileType(path string) string {
+	if strings.HasSuffix(path, ".txt") || strings.HasSuffix(path, ".md") {
+		return "config"
+	}
+	if strings.HasSuffix(path, ".json") || strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml") {
+		return "config"
+	}
+	if strings.HasSuffix(path, ".dockerfile") || strings.HasPrefix(path, "Dockerfile") {
+		return "config"
+	}
+	return "source"
+}
+
+// getFileExtension returns the appropriate file extension for a language
+func (a *BackendAgent) getFileExtension(language string) string {
+	switch language {
+	case "python":
+		return ".py"
+	case "go":
+		return ".go"
+	case "nodejs", "javascript":
+		return ".js"
+	case "typescript":
+		return ".ts"
+	case "java":
+		return ".java"
+	case "csharp":
+		return ".cs"
+	default:
+		return ".txt"
+	}
 }
 
 // generatePythonBackend generates Python backend code

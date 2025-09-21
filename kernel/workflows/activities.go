@@ -99,7 +99,7 @@ func ValidateIRActivity(ctx context.Context, irSpec *ir.IRSpec) (ValidationResul
 }
 
 // GenerateCodeActivity generates code using the agent factory
-func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []string, config map[string]interface{}) (CodeGenerationResult, error) {
+func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []string, config map[string]interface{}, provider, model string) (CodeGenerationResult, error) {
 
 	result := CodeGenerationResult{
 		Success:       true,
@@ -109,60 +109,143 @@ func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []str
 		Warnings:      []string{},
 	}
 
+	// Create agent factory (LLM-enabled if provider specified)
+	factory, err := createLLMEnabledFactory(provider, model)
+	if err != nil {
+		result.Success = false
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to create agent factory: %v", err))
+		return result, nil
+	}
+
 	// Generate backend code
 	if irSpec.App.Stack.Backend.Language != "" {
 
-		backendAgent := agents.NewBackendAgent()
-
-		// Create generation request
-		request := &agents.GenerationRequest{
-			Spec: irSpec,
-			Target: agents.GenerationTarget{
-				Type:      "backend",
-				Language:  irSpec.App.Stack.Backend.Language,
-				Framework: irSpec.App.Stack.Backend.Framework,
-			},
-			Options: agents.GenerationOptions{
-				CreateDirectories: true,
-				FormatCode:       true,
-				ValidateOutput:   true,
-			},
-			Context: map[string]interface{}{
-				"workflow": "factory",
-				"overlays": overlays,
-			},
-		}
-
-		output, err := backendAgent.Generate(context.Background(), request)
+		backendAgent, err := factory.CreateAgent(agents.AgentTypeBackend)
 		if err != nil {
 			result.Success = false
-			result.Errors = append(result.Errors, fmt.Sprintf("Backend generation failed: %v", err))
-		} else if !output.Success {
-			result.Success = false
-			result.Errors = append(result.Errors, output.Errors...)
-			result.Warnings = append(result.Warnings, output.Warnings...)
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to create backend agent: %v", err))
 		} else {
-			// Add generated files to result
-			for _, file := range output.Files {
-				result.GeneratedCode[file.Path] = file.Content
-				result.Artifacts = append(result.Artifacts, file.Path)
+			// Create generation request
+			request := &agents.GenerationRequest{
+				Spec: irSpec,
+				Target: agents.GenerationTarget{
+					Type:      "backend",
+					Language:  irSpec.App.Stack.Backend.Language,
+					Framework: irSpec.App.Stack.Backend.Framework,
+				},
+				Options: agents.GenerationOptions{
+					CreateDirectories: true,
+					FormatCode:       true,
+					ValidateOutput:   true,
+				},
+				Context: map[string]interface{}{
+					"workflow": "factory",
+					"overlays": overlays,
+				},
 			}
-			result.Warnings = append(result.Warnings, output.Warnings...)
+
+			output, err := backendAgent.Generate(context.Background(), request)
+			if err != nil {
+				result.Success = false
+				result.Errors = append(result.Errors, fmt.Sprintf("Backend generation failed: %v", err))
+			} else if !output.Success {
+				result.Success = false
+				result.Errors = append(result.Errors, output.Errors...)
+				result.Warnings = append(result.Warnings, output.Warnings...)
+			} else {
+				// Add generated files to result
+				for _, file := range output.Files {
+					result.GeneratedCode[file.Path] = file.Content
+					result.Artifacts = append(result.Artifacts, file.Path)
+				}
+				result.Warnings = append(result.Warnings, output.Warnings...)
+			}
 		}
 	}
 
 	// Generate frontend code if frontend stack is specified
 	if irSpec.App.Stack.Frontend.Framework != "" {
+		frontendAgent, err := factory.CreateAgent(agents.AgentTypeFrontend)
+		if err != nil {
+			result.Success = false
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to create frontend agent: %v", err))
+		} else {
+			// Create generation request
+			request := &agents.GenerationRequest{
+				Spec: irSpec,
+				Target: agents.GenerationTarget{
+					Type:      "frontend",
+					Language:  "javascript", // Default, could be determined from spec
+					Framework: irSpec.App.Stack.Frontend.Framework,
+				},
+				Options: agents.GenerationOptions{
+					CreateDirectories: true,
+					FormatCode:       true,
+					ValidateOutput:   true,
+				},
+				Context: map[string]interface{}{
+					"workflow": "factory",
+					"overlays": overlays,
+				},
+			}
 
-		// Frontend agent would be implemented here
-		result.Warnings = append(result.Warnings, "Frontend generation not yet implemented")
+			output, err := frontendAgent.Generate(context.Background(), request)
+			if err != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("Frontend generation failed: %v", err))
+			} else if !output.Success {
+				result.Warnings = append(result.Warnings, output.Errors...)
+				result.Warnings = append(result.Warnings, output.Warnings...)
+			} else {
+				// Add generated files to result
+				for _, file := range output.Files {
+					result.GeneratedCode[file.Path] = file.Content
+					result.Artifacts = append(result.Artifacts, file.Path)
+				}
+				result.Warnings = append(result.Warnings, output.Warnings...)
+			}
+		}
 	}
 
 	// Generate database code if entities are defined
 	if len(irSpec.Data.Entities) > 0 {
+		databaseAgent, err := factory.CreateAgent(agents.AgentTypeDatabase)
+		if err != nil {
+			result.Success = false
+			result.Errors = append(result.Errors, fmt.Sprintf("Failed to create database agent: %v", err))
+		} else {
+			// Create generation request
+			request := &agents.GenerationRequest{
+				Spec: irSpec,
+				Target: agents.GenerationTarget{
+					Type:     "database",
+					Language: "sql",
+				},
+				Options: agents.GenerationOptions{
+					CreateDirectories: true,
+					FormatCode:       true,
+					ValidateOutput:   true,
+				},
+				Context: map[string]interface{}{
+					"workflow": "factory",
+					"overlays": overlays,
+				},
+			}
 
-		// Database agent would be implemented here
-		result.Warnings = append(result.Warnings, "Database generation not yet implemented")
+			output, err := databaseAgent.Generate(context.Background(), request)
+			if err != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("Database generation failed: %v", err))
+			} else if !output.Success {
+				result.Warnings = append(result.Warnings, output.Errors...)
+				result.Warnings = append(result.Warnings, output.Warnings...)
+			} else {
+				// Add generated files to result
+				for _, file := range output.Files {
+					result.GeneratedCode[file.Path] = file.Content
+					result.Artifacts = append(result.Artifacts, file.Path)
+				}
+				result.Warnings = append(result.Warnings, output.Warnings...)
+			}
+		}
 	}
 
 	return result, nil
