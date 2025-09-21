@@ -19,6 +19,7 @@ type FactoryWorkflowInput struct {
 	DryRun       bool                   `json:"dry_run,omitempty"`
 	Verbose      bool                   `json:"verbose,omitempty"`
 	OutputDir    string                 `json:"output_dir,omitempty"`
+	Overlays     []string               `json:"overlays,omitempty"`
 }
 
 // CLI-compatible aliases for easier integration
@@ -73,7 +74,7 @@ func FactoryWorkflow(ctx workflow.Context, input FactoryWorkflowInput) (*Factory
 	// Step 1: Parse brief into IR (Intermediate Representation)
 	logger.Info("Step 1: Parsing brief into IR")
 	var irSpec *ir.IRSpec
-	err := workflow.ExecuteActivity(ctx, ParseBriefActivity, input.Brief, input.Config).Get(ctx, &irSpec)
+	err := workflow.ExecuteActivity(ctx, ParseBriefActivity, input.Brief, input.Overlays, input.Config).Get(ctx, &irSpec)
 	if err != nil {
 		result.Success = false
 		result.Errors = append(result.Errors, "Failed to parse brief: "+err.Error())
@@ -106,7 +107,7 @@ func FactoryWorkflow(ctx workflow.Context, input FactoryWorkflowInput) (*Factory
 	// Step 3: Generate code using agents
 	logger.Info("Step 3: Generating code with agents")
 	var codeGenResult CodeGenerationResult
-	err = workflow.ExecuteActivity(ctx, GenerateCodeActivity, irSpec, input.Config).Get(ctx, &codeGenResult)
+	err = workflow.ExecuteActivity(ctx, GenerateCodeActivity, irSpec, input.Overlays, input.Config).Get(ctx, &codeGenResult)
 	if err != nil {
 		result.Success = false
 		result.Errors = append(result.Errors, "Failed to generate code: "+err.Error())

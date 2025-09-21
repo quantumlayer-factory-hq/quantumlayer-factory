@@ -1,0 +1,441 @@
+metadata:
+  name: gdpr
+  version: "1.0.0"
+  type: compliance
+  priority: 10
+  description: GDPR compliance overlay enforcing European data protection and privacy requirements
+  author: QuantumLayer Factory
+  tags:
+    - gdpr
+    - data-protection
+    - privacy
+    - european-compliance
+    - data-rights
+  created_at: 2025-01-01T00:00:00Z
+  updated_at: 2025-01-01T00:00:00Z
+  config:
+    gdpr_version: "2018"
+    data_retention_days: "2555"  # 7 years default
+    breach_notification_hours: "72"
+
+dependencies: []
+
+ir_modifications:
+  - path: "app.features"
+    operation: "add"
+    value:
+      - "consent_management"
+      - "data_subject_rights"
+      - "privacy_by_design"
+      - "data_minimization"
+      - "purpose_limitation"
+      - "breach_notification"
+      - "data_portability"
+      - "right_to_erasure"
+
+  - path: "app.security_requirements"
+    operation: "add"
+    value:
+      - name: "lawful_basis"
+        description: "GDPR Article 6 - Lawful basis for processing"
+        controls:
+          - "consent_management"
+          - "legitimate_interest_assessment"
+          - "contract_necessity"
+          - "legal_obligation_compliance"
+      - name: "data_subject_rights"
+        description: "GDPR Chapter III - Rights of the data subject"
+        controls:
+          - "right_to_information"
+          - "right_of_access"
+          - "right_to_rectification"
+          - "right_to_erasure"
+          - "right_to_restrict_processing"
+          - "right_to_data_portability"
+          - "right_to_object"
+      - name: "data_protection_principles"
+        description: "GDPR Article 5 - Principles relating to processing"
+        controls:
+          - "lawfulness_fairness_transparency"
+          - "purpose_limitation"
+          - "data_minimisation"
+          - "accuracy"
+          - "storage_limitation"
+          - "integrity_confidentiality"
+
+prompt_enhancements:
+  - agent_type: "backend"
+    section: "system"
+    content: |
+      You are generating code for a GDPR-compliant system that processes personal data of EU residents. Follow these MANDATORY requirements:
+
+      GDPR ARTICLE 5 - PRINCIPLES OF PROCESSING:
+      - Lawfulness, fairness and transparency: Process data lawfully with clear purpose
+      - Purpose limitation: Use data only for specified, explicit and legitimate purposes
+      - Data minimisation: Collect and process only necessary personal data
+      - Accuracy: Keep personal data accurate and up to date
+      - Storage limitation: Keep data only as long as necessary
+      - Integrity and confidentiality: Ensure security of personal data
+
+      GDPR ARTICLE 6 - LAWFUL BASIS:
+      - Obtain valid consent OR establish other lawful basis (contract, legal obligation, etc.)
+      - Make lawful basis clear and documented
+      - Allow withdrawal of consent at any time
+      - Ensure consent is freely given, specific, informed and unambiguous
+
+      GDPR CHAPTER III - DATA SUBJECT RIGHTS:
+      - Right to be informed: Provide clear privacy notices
+      - Right of access: Allow individuals to access their personal data
+      - Right to rectification: Enable correction of inaccurate data
+      - Right to erasure: Implement "right to be forgotten"
+      - Right to restrict processing: Allow limitation of processing
+      - Right to data portability: Provide data in structured, machine-readable format
+      - Right to object: Allow objection to processing
+
+      GDPR ARTICLE 25 - DATA PROTECTION BY DESIGN:
+      - Implement data protection measures by design and by default
+      - Use pseudonymisation and encryption where appropriate
+      - Ensure minimal data processing
+      - Implement privacy settings as default
+
+      GDPR ARTICLE 33-34 - BREACH NOTIFICATION:
+      - Detect and report breaches to supervisory authority within 72 hours
+      - Notify data subjects without undue delay if high risk
+      - Maintain records of all personal data breaches
+    position: "before"
+    priority: 10
+
+  - agent_type: "backend"
+    section: "examples"
+    content: |
+      Example: GDPR-Compliant Personal Data Processing
+      ```go
+      type GDPRCompliantService struct {
+          db             *sql.DB
+          consentManager consent.Manager
+          auditor        audit.GDPRAuditor
+          encryptor      crypto.Encryptor
+          retention      retention.Manager
+      }
+
+      // ProcessPersonalData processes personal data with GDPR compliance
+      func (s *GDPRCompliantService) ProcessPersonalData(ctx context.Context, req ProcessingRequest) error {
+          // Check lawful basis for processing - GDPR Article 6
+          lawfulBasis, err := s.consentManager.GetLawfulBasis(ctx, req.DataSubjectID, req.ProcessingPurpose)
+          if err != nil {
+              return err
+          }
+
+          if lawfulBasis == nil || !lawfulBasis.IsValid() {
+              s.auditor.LogUnlawfulProcessingAttempt(req.DataSubjectID, req.ProcessingPurpose)
+              return errors.New("no valid lawful basis for processing")
+          }
+
+          // Apply data minimisation - GDPR Article 5(1)(c)
+          minimisedData := s.minimizeData(req.PersonalData, req.ProcessingPurpose)
+
+          // Check purpose limitation - GDPR Article 5(1)(b)
+          if !s.isPurposeCompatible(lawfulBasis.Purpose, req.ProcessingPurpose) {
+              return errors.New("processing purpose not compatible with original purpose")
+          }
+
+          // Process data with audit trail
+          processingRecord := ProcessingRecord{
+              ID:               uuid.New(),
+              DataSubjectID:    req.DataSubjectID,
+              ProcessingPurpose: req.ProcessingPurpose,
+              LawfulBasis:      lawfulBasis.Basis,
+              DataCategories:   s.categorizeData(minimisedData),
+              ProcessedAt:      time.Now(),
+              ProcessedBy:      getUserIDFromContext(ctx),
+              RetentionPeriod:  s.retention.GetRetentionPeriod(req.ProcessingPurpose),
+          }
+
+          // Store processing record for accountability - GDPR Article 5(2)
+          if err := s.auditor.LogProcessingActivity(processingRecord); err != nil {
+              return err
+          }
+
+          // Perform actual processing
+          return s.performProcessing(ctx, minimisedData, req.ProcessingPurpose)
+      }
+
+      // HandleDataSubjectRequest handles GDPR data subject rights requests
+      func (s *GDPRCompliantService) HandleDataSubjectRequest(ctx context.Context, req DataSubjectRequest) (*DataSubjectResponse, error) {
+          // Verify data subject identity
+          if !s.verifyDataSubjectIdentity(ctx, req) {
+              return nil, errors.New("identity verification failed")
+          }
+
+          switch req.RequestType {
+          case "access": // Article 15 - Right of access
+              return s.handleAccessRequest(ctx, req)
+          case "rectification": // Article 16 - Right to rectification
+              return s.handleRectificationRequest(ctx, req)
+          case "erasure": // Article 17 - Right to erasure
+              return s.handleErasureRequest(ctx, req)
+          case "portability": // Article 20 - Right to data portability
+              return s.handlePortabilityRequest(ctx, req)
+          case "restrict": // Article 18 - Right to restriction
+              return s.handleRestrictionRequest(ctx, req)
+          case "object": // Article 21 - Right to object
+              return s.handleObjectionRequest(ctx, req)
+          default:
+              return nil, errors.New("unsupported request type")
+          }
+      }
+
+      // handleErasureRequest implements "right to be forgotten"
+      func (s *GDPRCompliantService) handleErasureRequest(ctx context.Context, req DataSubjectRequest) (*DataSubjectResponse, error) {
+          // Check if erasure is applicable
+          canErase, reason := s.canEraseData(req.DataSubjectID, req.DataCategories)
+          if !canErase {
+              return &DataSubjectResponse{
+                  RequestID:   req.ID,
+                  Status:      "rejected",
+                  Reason:      reason,
+                  ProcessedAt: time.Now(),
+              }, nil
+          }
+
+          // Perform secure deletion
+          deletionRecord := DeletionRecord{
+              DataSubjectID:  req.DataSubjectID,
+              DataCategories: req.DataCategories,
+              DeletedAt:      time.Now(),
+              DeletedBy:      "gdpr_erasure_request",
+              Method:         "secure_overwrite",
+          }
+
+          // Start transaction for consistent deletion
+          tx, err := s.db.BeginTx(ctx, nil)
+          if err != nil {
+              return nil, err
+          }
+          defer tx.Rollback()
+
+          // Delete personal data
+          if err := s.securelyDeletePersonalData(ctx, tx, req.DataSubjectID, req.DataCategories); err != nil {
+              return nil, err
+          }
+
+          // Record deletion for audit
+          if err := s.auditor.LogDataDeletion(deletionRecord); err != nil {
+              return nil, err
+          }
+
+          if err := tx.Commit(); err != nil {
+              return nil, err
+          }
+
+          return &DataSubjectResponse{
+              RequestID:   req.ID,
+              Status:      "completed",
+              ProcessedAt: time.Now(),
+              Details:     "Personal data has been securely deleted",
+          }, nil
+      }
+      ```
+    position: "after"
+    priority: 10
+
+  - agent_type: "database"
+    section: "context"
+    content: |
+      GDPR database requirements:
+      - Implement data retention policies with automatic deletion
+      - Use pseudonymisation and encryption for personal data
+      - Create audit trails for all personal data processing
+      - Implement data portability exports in structured formats
+      - Support secure data deletion (overwriting, not just marking deleted)
+      - Separate personal data from non-personal data where possible
+      - Implement data minimisation at database level
+      - Use role-based access controls aligned with processing purposes
+      - Enable data breach detection and alerting
+      - Support consent withdrawal and processing restriction
+    position: "before"
+    priority: 10
+
+validation_rules:
+  - name: "consent_requirement"
+    type: "compliance"
+    severity: "error"
+    pattern: "personal.*data.*processing.*without.*consent"
+    message: "Personal data processing requires valid lawful basis per GDPR Article 6"
+    remediation: "Implement consent management or establish other lawful basis before processing"
+
+  - name: "data_minimisation"
+    type: "compliance"
+    severity: "warning"
+    pattern: "SELECT.*\\*.*FROM.*users|user.*all.*fields"
+    message: "Data collection should follow minimisation principle per GDPR Article 5(1)(c)"
+    remediation: "Select only personal data necessary for the specific purpose"
+
+  - name: "retention_period"
+    type: "compliance"
+    severity: "warning"
+    pattern: "personal.*data.*without.*retention|no.*deletion.*policy"
+    message: "Personal data must have defined retention periods per GDPR Article 5(1)(e)"
+    remediation: "Implement data retention policies with automatic deletion"
+
+  - name: "breach_notification"
+    type: "compliance"
+    severity: "error"
+    pattern: "data.*breach.*without.*notification"
+    message: "Data breaches must be notified within 72 hours per GDPR Article 33"
+    remediation: "Implement breach detection and notification procedures"
+
+  - name: "data_portability"
+    type: "compliance"
+    severity: "warning"
+    pattern: "user.*data.*export.*without.*structure"
+    message: "Data exports should be in structured format per GDPR Article 20"
+    remediation: "Provide data exports in JSON, CSV, or other machine-readable formats"
+
+  - name: "privacy_by_default"
+    type: "compliance"
+    severity: "warning"
+    pattern: "privacy.*settings.*default.*false|consent.*default.*true"
+    message: "Privacy settings should be enabled by default per GDPR Article 25"
+    remediation: "Set privacy-friendly defaults and require explicit consent"
+
+templates:
+  consent_controller: |
+    // GDPR-compliant consent management controller
+    func (c *ConsentController) UpdateConsent(w http.ResponseWriter, r *http.Request) {
+        var req ConsentUpdateRequest
+        if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+            http.Error(w, "Invalid request", http.StatusBadRequest)
+            return
+        }
+
+        dataSubjectID := c.getDataSubjectID(r)
+        if dataSubjectID == "" {
+            http.Error(w, "Authentication required", http.StatusUnauthorized)
+            return
+        }
+
+        // Process consent update
+        consent := ConsentRecord{
+            DataSubjectID:    dataSubjectID,
+            ProcessingPurpose: req.Purpose,
+            ConsentGiven:     req.ConsentGiven,
+            ConsentMethod:    "web_form",
+            ConsentTimestamp: time.Now(),
+            ConsentString:    req.ConsentString,
+            LawfulBasis:      "consent", // GDPR Article 6(1)(a)
+        }
+
+        // Store consent record
+        if err := c.consentService.UpdateConsent(r.Context(), consent); err != nil {
+            http.Error(w, "Failed to update consent", http.StatusInternalServerError)
+            return
+        }
+
+        // If consent withdrawn, stop processing immediately
+        if !req.ConsentGiven {
+            if err := c.processingService.StopProcessing(dataSubjectID, req.Purpose); err != nil {
+                c.logger.Error("Failed to stop processing after consent withdrawal", "error", err)
+            }
+        }
+
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]string{
+            "status": "consent_updated",
+            "effective_at": consent.ConsentTimestamp.Format(time.RFC3339),
+        })
+    }
+
+  data_export_service: |
+    // GDPR-compliant data portability service
+    func (s *DataExportService) ExportPersonalData(ctx context.Context, dataSubjectID string) (*DataExport, error) {
+        // Verify identity and authorization
+        if !s.verifyDataSubjectIdentity(ctx, dataSubjectID) {
+            return nil, errors.New("identity verification failed")
+        }
+
+        // Collect all personal data categories
+        personalData := PersonalDataExport{
+            DataSubjectID: dataSubjectID,
+            ExportedAt:    time.Now(),
+            Format:        "JSON",
+            Data:          make(map[string]interface{}),
+        }
+
+        // Export profile data
+        profile, err := s.getProfileData(ctx, dataSubjectID)
+        if err != nil {
+            return nil, err
+        }
+        personalData.Data["profile"] = profile
+
+        // Export transaction history
+        transactions, err := s.getTransactionData(ctx, dataSubjectID)
+        if err != nil {
+            return nil, err
+        }
+        personalData.Data["transactions"] = transactions
+
+        // Export consent records
+        consents, err := s.getConsentData(ctx, dataSubjectID)
+        if err != nil {
+            return nil, err
+        }
+        personalData.Data["consents"] = consents
+
+        // Include processing records for transparency
+        processing, err := s.getProcessingRecords(ctx, dataSubjectID)
+        if err != nil {
+            return nil, err
+        }
+        personalData.Data["processing_records"] = processing
+
+        // Log data export request
+        s.auditor.LogDataExport(dataSubjectID, personalData.DataCategories())
+
+        return &DataExport{
+            PersonalData: personalData,
+            Metadata: ExportMetadata{
+                GeneratedAt:     time.Now(),
+                RetentionPolicy: s.getRetentionPolicy(),
+                ContactInfo:     s.getDataControllerContact(),
+            },
+        }, nil
+    }
+
+  retention_manager: |
+    // GDPR-compliant data retention manager
+    type RetentionManager struct {
+        db      *sql.DB
+        auditor audit.GDPRAuditor
+        config  RetentionConfig
+    }
+
+    func (r *RetentionManager) ProcessRetentionPolicies(ctx context.Context) error {
+        // Get all active retention policies
+        policies, err := r.getActiveRetentionPolicies()
+        if err != nil {
+            return err
+        }
+
+        for _, policy := range policies {
+            // Find data exceeding retention period
+            expiredData, err := r.findExpiredData(policy)
+            if err != nil {
+                r.auditor.LogRetentionError(policy.ID, err)
+                continue
+            }
+
+            // Securely delete expired data
+            for _, data := range expiredData {
+                if err := r.securelyDeleteData(ctx, data); err != nil {
+                    r.auditor.LogDeletionError(data.ID, err)
+                    continue
+                }
+
+                r.auditor.LogAutomaticDeletion(data.ID, policy.ID, "retention_policy")
+            }
+        }
+
+        return nil
+    }

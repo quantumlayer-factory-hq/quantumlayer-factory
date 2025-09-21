@@ -1,0 +1,385 @@
+metadata:
+  name: healthcare
+  version: "1.0.0"
+  type: domain
+  priority: 5
+  description: Healthcare domain overlay with patient data management, medical records, and healthcare workflow patterns
+  author: QuantumLayer Factory
+  tags:
+    - healthcare
+    - medical
+    - patient-care
+    - hipaa
+    - ehr
+  created_at: 2025-01-01T00:00:00Z
+  updated_at: 2025-01-01T00:00:00Z
+  config:
+    phi_retention_years: "7"
+    default_timezone: "UTC"
+
+dependencies: []
+
+ir_modifications:
+  - path: "app.features"
+    operation: "add"
+    value:
+      - "patient_management"
+      - "medical_records"
+      - "appointment_scheduling"
+      - "prescription_management"
+      - "consent_tracking"
+      - "audit_logging"
+      - "data_anonymization"
+      - "access_controls"
+
+  - path: "app.stack.backend.database"
+    operation: "replace"
+    value: "postgresql"
+    condition: "when database not specified"
+
+  - path: "app.entities"
+    operation: "add"
+    value:
+      - name: "Patient"
+        fields:
+          - name: "patient_id"
+            type: "uuid"
+            primary_key: true
+          - name: "mrn"
+            type: "string"
+            unique: true
+            encrypted: true
+            description: "Medical Record Number"
+          - name: "first_name"
+            type: "string"
+            encrypted: true
+          - name: "last_name"
+            type: "string"
+            encrypted: true
+          - name: "date_of_birth"
+            type: "date"
+            encrypted: true
+          - name: "ssn"
+            type: "string"
+            encrypted: true
+            phi: true
+          - name: "phone"
+            type: "string"
+            encrypted: true
+            phi: true
+          - name: "email"
+            type: "string"
+            encrypted: true
+            phi: true
+          - name: "emergency_contact"
+            type: "json"
+            encrypted: true
+          - name: "created_at"
+            type: "timestamp"
+            immutable: true
+          - name: "updated_at"
+            type: "timestamp"
+      - name: "MedicalRecord"
+        fields:
+          - name: "record_id"
+            type: "uuid"
+            primary_key: true
+          - name: "patient_id"
+            type: "uuid"
+            foreign_key: "patients.patient_id"
+          - name: "provider_id"
+            type: "uuid"
+          - name: "visit_date"
+            type: "timestamp"
+          - name: "diagnosis_codes"
+            type: "json"
+            description: "ICD-10 codes"
+          - name: "procedure_codes"
+            type: "json"
+            description: "CPT codes"
+          - name: "notes"
+            type: "text"
+            encrypted: true
+          - name: "vitals"
+            type: "json"
+          - name: "medications"
+            type: "json"
+          - name: "created_at"
+            type: "timestamp"
+            immutable: true
+      - name: "Appointment"
+        fields:
+          - name: "appointment_id"
+            type: "uuid"
+            primary_key: true
+          - name: "patient_id"
+            type: "uuid"
+            foreign_key: "patients.patient_id"
+          - name: "provider_id"
+            type: "uuid"
+          - name: "scheduled_time"
+            type: "timestamp"
+          - name: "duration_minutes"
+            type: "integer"
+          - name: "status"
+            type: "enum"
+            values: ["scheduled", "confirmed", "in_progress", "completed", "cancelled", "no_show"]
+          - name: "reason"
+            type: "string"
+          - name: "created_at"
+            type: "timestamp"
+            immutable: true
+
+prompt_enhancements:
+  - agent_type: "backend"
+    section: "system"
+    content: |
+      You are generating code for a healthcare application that handles Protected Health Information (PHI). Follow these critical requirements:
+
+      HIPAA COMPLIANCE REQUIREMENTS:
+      - All PHI must be encrypted at rest and in transit (AES-256 minimum)
+      - Implement proper access controls with role-based permissions
+      - Maintain detailed audit logs for all PHI access and modifications
+      - Use de-identification for analytics and reporting
+      - Implement proper session management and timeout controls
+      - Never log PHI in application logs
+
+      DATA SECURITY:
+      - Encrypt all PHI fields in the database
+      - Use secure key management (preferably cloud KMS)
+      - Implement proper authentication (preferably multi-factor)
+      - Validate all inputs to prevent injection attacks
+      - Use HTTPS with proper TLS configuration
+      - Implement proper backup encryption
+
+      BUSINESS LOGIC:
+      - Validate medical record numbers (MRN) for uniqueness
+      - Implement proper patient consent tracking
+      - Handle time zones correctly for appointments
+      - Validate medical codes (ICD-10, CPT)
+      - Implement proper data retention policies
+      - Support emergency access procedures
+    position: "before"
+    priority: 10
+
+  - agent_type: "backend"
+    section: "examples"
+    content: |
+      Example: Secure Patient Data Access
+      ```go
+      type PatientService struct {
+          db         *sql.DB
+          encryptor  crypto.Encryptor
+          auditor    audit.Logger
+          authz      authz.Service
+      }
+
+      func (s *PatientService) GetPatient(ctx context.Context, patientID string, requesterID string) (*Patient, error) {
+          // Check authorization
+          if !s.authz.CanAccessPatient(ctx, requesterID, patientID) {
+              s.auditor.LogUnauthorizedAccess(requesterID, patientID, "get_patient")
+              return nil, ErrUnauthorized
+          }
+
+          // Retrieve encrypted patient data
+          row := s.db.QueryRowContext(ctx, `
+              SELECT patient_id, mrn_encrypted, first_name_encrypted,
+                     last_name_encrypted, dob_encrypted, created_at
+              FROM patients
+              WHERE patient_id = $1 AND deleted_at IS NULL
+          `, patientID)
+
+          var p Patient
+          var encryptedData struct {
+              MRN       []byte
+              FirstName []byte
+              LastName  []byte
+              DOB       []byte
+          }
+
+          err := row.Scan(&p.ID, &encryptedData.MRN, &encryptedData.FirstName,
+                         &encryptedData.LastName, &encryptedData.DOB, &p.CreatedAt)
+          if err != nil {
+              return nil, err
+          }
+
+          // Decrypt PHI
+          if p.MRN, err = s.encryptor.Decrypt(encryptedData.MRN); err != nil {
+              return nil, err
+          }
+          if p.FirstName, err = s.encryptor.Decrypt(encryptedData.FirstName); err != nil {
+              return nil, err
+          }
+          if p.LastName, err = s.encryptor.Decrypt(encryptedData.LastName); err != nil {
+              return nil, err
+          }
+          if dobStr, err := s.encryptor.Decrypt(encryptedData.DOB); err != nil {
+              return nil, err
+          } else {
+              p.DateOfBirth, _ = time.Parse("2006-01-02", string(dobStr))
+          }
+
+          // Log authorized access
+          s.auditor.LogPHIAccess(requesterID, patientID, "get_patient", "success")
+
+          return &p, nil
+      }
+      ```
+    position: "after"
+    priority: 8
+
+  - agent_type: "database"
+    section: "context"
+    content: |
+      Healthcare database requirements:
+      - Use PostgreSQL with row-level security enabled
+      - Implement column-level encryption for all PHI
+      - Create audit triggers for all PHI table modifications
+      - Use proper indexing while maintaining security
+      - Implement soft deletes (never hard delete PHI)
+      - Set up proper backup encryption and access controls
+      - Use database connection encryption (SSL/TLS)
+      - Implement database audit logging
+    position: "before"
+    priority: 9
+
+  - agent_type: "frontend"
+    section: "context"
+    content: |
+      Healthcare frontend requirements:
+      - Implement session timeouts (15 minutes max idle)
+      - Use secure authentication (preferably SSO/SAML)
+      - Implement proper role-based UI controls
+      - Never cache PHI in browser storage
+      - Use secure HTTPS communication only
+      - Implement proper consent management UI
+      - Display audit trails for PHI access
+      - Support emergency access workflows
+    position: "before"
+    priority: 8
+
+validation_rules:
+  - name: "phi_encryption"
+    type: "security"
+    severity: "error"
+    pattern: "patient.*phi.*varchar.*without.*encrypt"
+    message: "PHI fields must be encrypted at rest"
+    remediation: "Use encrypted database columns or application-level encryption for PHI"
+
+  - name: "phi_logging"
+    type: "security"
+    severity: "error"
+    pattern: "log.*patient.*ssn|log.*patient.*dob"
+    message: "PHI must never be logged in application logs"
+    remediation: "Remove PHI from log statements or use de-identified data"
+
+  - name: "audit_trail"
+    type: "compliance"
+    severity: "error"
+    pattern: "UPDATE.*patient.*without.*audit"
+    message: "All PHI modifications must be audited"
+    remediation: "Add audit logging before any PHI data modifications"
+
+  - name: "access_control"
+    type: "security"
+    severity: "error"
+    pattern: "patient.*data.*without.*authorization"
+    message: "Patient data access must include authorization checks"
+    remediation: "Add proper authorization validation before PHI access"
+
+  - name: "session_timeout"
+    type: "security"
+    severity: "warning"
+    pattern: "session.*timeout.*greater.*15.*minutes"
+    message: "Healthcare applications should have shorter session timeouts"
+    remediation: "Set session timeout to 15 minutes or less"
+
+templates:
+  patient_controller: |
+    // Patient data access with proper HIPAA compliance
+    func (c *PatientController) GetPatient(w http.ResponseWriter, r *http.Request) {
+        patientID := chi.URLParam(r, "patientId")
+        requesterID := c.getUserID(r)
+
+        // Validate patient ID format
+        if !isValidUUID(patientID) {
+            http.Error(w, "Invalid patient ID", http.StatusBadRequest)
+            return
+        }
+
+        // Get patient with authorization and audit
+        patient, err := c.patientService.GetPatient(r.Context(), patientID, requesterID)
+        if err != nil {
+            if errors.Is(err, ErrUnauthorized) {
+                http.Error(w, "Access denied", http.StatusForbidden)
+                return
+            }
+            c.logger.Error("Failed to get patient", "error", err, "patient_id", patientID)
+            http.Error(w, "Internal error", http.StatusInternalServerError)
+            return
+        }
+
+        // Return patient data (already decrypted by service)
+        w.Header().Set("Content-Type", "application/json")
+        w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+        json.NewEncoder(w).Encode(patient)
+    }
+
+  encryption_service: |
+    // PHI encryption service using AES-256-GCM
+    type EncryptionService struct {
+        key []byte
+    }
+
+    func (e *EncryptionService) EncryptPHI(plaintext string) ([]byte, error) {
+        if plaintext == "" {
+            return nil, nil
+        }
+
+        block, err := aes.NewCipher(e.key)
+        if err != nil {
+            return nil, err
+        }
+
+        gcm, err := cipher.NewGCM(block)
+        if err != nil {
+            return nil, err
+        }
+
+        nonce := make([]byte, gcm.NonceSize())
+        if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+            return nil, err
+        }
+
+        ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+        return ciphertext, nil
+    }
+
+    func (e *EncryptionService) DecryptPHI(ciphertext []byte) (string, error) {
+        if len(ciphertext) == 0 {
+            return "", nil
+        }
+
+        block, err := aes.NewCipher(e.key)
+        if err != nil {
+            return "", err
+        }
+
+        gcm, err := cipher.NewGCM(block)
+        if err != nil {
+            return "", err
+        }
+
+        nonceSize := gcm.NonceSize()
+        if len(ciphertext) < nonceSize {
+            return "", errors.New("ciphertext too short")
+        }
+
+        nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+        plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+        if err != nil {
+            return "", err
+        }
+
+        return string(plaintext), nil
+    }

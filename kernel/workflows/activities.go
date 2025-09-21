@@ -11,13 +11,21 @@ import (
 )
 
 // ParseBriefActivity parses a natural language brief into IR
-func ParseBriefActivity(ctx context.Context, brief string, config map[string]interface{}) (*ir.IRSpec, error) {
+func ParseBriefActivity(ctx context.Context, brief string, overlays []string, config map[string]interface{}) (*ir.IRSpec, error) {
 
 	// Create IR compiler
 	compiler := ir.NewCompiler()
 
-	// Parse the brief
-	result, err := compiler.Compile(brief)
+	var result *ir.CompilationResult
+	var err error
+
+	// Use overlays if provided, otherwise do regular compilation
+	if len(overlays) > 0 {
+		result, err = compiler.CompileWithOverlays(brief, overlays)
+	} else {
+		result, err = compiler.Compile(brief)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile brief: %w", err)
 	}
@@ -91,7 +99,7 @@ func ValidateIRActivity(ctx context.Context, irSpec *ir.IRSpec) (ValidationResul
 }
 
 // GenerateCodeActivity generates code using the agent factory
-func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, config map[string]interface{}) (CodeGenerationResult, error) {
+func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []string, config map[string]interface{}) (CodeGenerationResult, error) {
 
 	result := CodeGenerationResult{
 		Success:       true,
@@ -121,6 +129,7 @@ func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, config map[str
 			},
 			Context: map[string]interface{}{
 				"workflow": "factory",
+				"overlays": overlays,
 			},
 		}
 

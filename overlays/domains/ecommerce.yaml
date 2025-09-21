@@ -1,0 +1,444 @@
+metadata:
+  name: ecommerce
+  version: "1.0.0"
+  type: domain
+  priority: 5
+  description: E-commerce domain overlay with product catalog, cart management, order processing, and inventory patterns
+  author: QuantumLayer Factory
+  tags:
+    - ecommerce
+    - retail
+    - shopping
+    - inventory
+    - orders
+  created_at: 2025-01-01T00:00:00Z
+  updated_at: 2025-01-01T00:00:00Z
+  config:
+    default_currency: "USD"
+    inventory_tracking: "true"
+    cart_expiry_hours: "24"
+
+dependencies: []
+
+ir_modifications:
+  - path: "app.features"
+    operation: "add"
+    value:
+      - "product_catalog"
+      - "shopping_cart"
+      - "order_management"
+      - "inventory_tracking"
+      - "payment_processing"
+      - "user_management"
+      - "search_and_filtering"
+      - "recommendations"
+      - "reviews_and_ratings"
+      - "promotions_and_discounts"
+
+  - path: "app.stack.backend.database"
+    operation: "replace"
+    value: "postgresql"
+    condition: "when database not specified"
+
+  - path: "app.entities"
+    operation: "add"
+    value:
+      - name: "Product"
+        fields:
+          - name: "product_id"
+            type: "uuid"
+            primary_key: true
+          - name: "sku"
+            type: "string"
+            unique: true
+            indexed: true
+          - name: "name"
+            type: "string"
+            indexed: true
+          - name: "description"
+            type: "text"
+          - name: "price"
+            type: "decimal"
+            precision: 10
+            scale: 2
+          - name: "category_id"
+            type: "uuid"
+            foreign_key: "categories.category_id"
+          - name: "brand"
+            type: "string"
+            indexed: true
+          - name: "tags"
+            type: "json"
+          - name: "images"
+            type: "json"
+          - name: "attributes"
+            type: "json"
+            description: "Size, color, material, etc."
+          - name: "is_active"
+            type: "boolean"
+            default: true
+          - name: "created_at"
+            type: "timestamp"
+            immutable: true
+          - name: "updated_at"
+            type: "timestamp"
+      - name: "Inventory"
+        fields:
+          - name: "inventory_id"
+            type: "uuid"
+            primary_key: true
+          - name: "product_id"
+            type: "uuid"
+            foreign_key: "products.product_id"
+          - name: "quantity_available"
+            type: "integer"
+            min: 0
+          - name: "quantity_reserved"
+            type: "integer"
+            min: 0
+            default: 0
+          - name: "reorder_level"
+            type: "integer"
+            min: 0
+          - name: "warehouse_location"
+            type: "string"
+          - name: "last_restocked"
+            type: "timestamp"
+          - name: "updated_at"
+            type: "timestamp"
+      - name: "ShoppingCart"
+        fields:
+          - name: "cart_id"
+            type: "uuid"
+            primary_key: true
+          - name: "user_id"
+            type: "uuid"
+            foreign_key: "users.user_id"
+          - name: "session_id"
+            type: "string"
+            indexed: true
+          - name: "items"
+            type: "json"
+          - name: "total_amount"
+            type: "decimal"
+            precision: 10
+            scale: 2
+          - name: "currency"
+            type: "string"
+            default: "USD"
+          - name: "expires_at"
+            type: "timestamp"
+          - name: "created_at"
+            type: "timestamp"
+            immutable: true
+          - name: "updated_at"
+            type: "timestamp"
+      - name: "Order"
+        fields:
+          - name: "order_id"
+            type: "uuid"
+            primary_key: true
+          - name: "order_number"
+            type: "string"
+            unique: true
+            indexed: true
+          - name: "user_id"
+            type: "uuid"
+            foreign_key: "users.user_id"
+          - name: "status"
+            type: "enum"
+            values: ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled", "refunded"]
+          - name: "items"
+            type: "json"
+          - name: "subtotal"
+            type: "decimal"
+            precision: 10
+            scale: 2
+          - name: "tax_amount"
+            type: "decimal"
+            precision: 10
+            scale: 2
+          - name: "shipping_amount"
+            type: "decimal"
+            precision: 10
+            scale: 2
+          - name: "total_amount"
+            type: "decimal"
+            precision: 10
+            scale: 2
+          - name: "currency"
+            type: "string"
+          - name: "shipping_address"
+            type: "json"
+          - name: "billing_address"
+            type: "json"
+          - name: "payment_method"
+            type: "string"
+          - name: "tracking_number"
+            type: "string"
+          - name: "created_at"
+            type: "timestamp"
+            immutable: true
+          - name: "updated_at"
+            type: "timestamp"
+
+prompt_enhancements:
+  - agent_type: "backend"
+    section: "system"
+    content: |
+      You are generating code for an e-commerce application. Follow these critical requirements:
+
+      INVENTORY MANAGEMENT:
+      - Always check product availability before adding to cart
+      - Implement inventory reservation during checkout process
+      - Handle concurrent inventory updates with proper locking
+      - Support backorder and pre-order scenarios
+      - Implement automatic reorder alerts
+      - Track inventory movements with audit trails
+
+      CART AND ORDER PROCESSING:
+      - Implement cart persistence across sessions
+      - Handle cart expiration and cleanup
+      - Calculate taxes based on shipping address
+      - Validate pricing and apply discounts correctly
+      - Implement order state machine with proper transitions
+      - Support order modifications and cancellations
+
+      PERFORMANCE AND SCALABILITY:
+      - Implement product search with proper indexing
+      - Use caching for frequently accessed product data
+      - Optimize database queries for product listings
+      - Implement pagination for large result sets
+      - Consider read replicas for product catalog queries
+      - Use event-driven architecture for order processing
+
+      BUSINESS LOGIC:
+      - Validate SKU uniqueness and format
+      - Calculate shipping costs based on weight/location
+      - Handle multiple currencies if international
+      - Implement promotion and discount rules
+      - Support gift cards and store credit
+      - Integrate with payment gateways securely
+    position: "before"
+    priority: 10
+
+  - agent_type: "backend"
+    section: "examples"
+    content: |
+      Example: Add to Cart with Inventory Check
+      ```go
+      type CartService struct {
+          db            *sql.DB
+          inventoryRepo inventory.Repository
+          cartRepo      cart.Repository
+          locker        distributed.Locker
+      }
+
+      func (s *CartService) AddToCart(ctx context.Context, req AddToCartRequest) error {
+          // Lock inventory for this product
+          lockKey := fmt.Sprintf("inventory:%s", req.ProductID)
+          lock, err := s.locker.Acquire(ctx, lockKey, 30*time.Second)
+          if err != nil {
+              return err
+          }
+          defer lock.Release()
+
+          // Check product availability
+          inventory, err := s.inventoryRepo.GetByProductID(ctx, req.ProductID)
+          if err != nil {
+              return err
+          }
+
+          availableQty := inventory.QuantityAvailable - inventory.QuantityReserved
+          if availableQty < req.Quantity {
+              return ErrInsufficientInventory
+          }
+
+          // Get or create cart
+          cart, err := s.cartRepo.GetByUserID(ctx, req.UserID)
+          if err != nil {
+              if errors.Is(err, ErrCartNotFound) {
+                  cart = &Cart{
+                      ID:        uuid.New(),
+                      UserID:    req.UserID,
+                      Items:     []CartItem{},
+                      ExpiresAt: time.Now().Add(24 * time.Hour),
+                  }
+              } else {
+                  return err
+              }
+          }
+
+          // Add item to cart
+          existingItem := cart.FindItem(req.ProductID)
+          if existingItem != nil {
+              existingItem.Quantity += req.Quantity
+          } else {
+              product, err := s.productRepo.GetByID(ctx, req.ProductID)
+              if err != nil {
+                  return err
+              }
+
+              cart.Items = append(cart.Items, CartItem{
+                  ProductID:   req.ProductID,
+                  ProductName: product.Name,
+                  Price:       product.Price,
+                  Quantity:    req.Quantity,
+              })
+          }
+
+          // Recalculate cart total
+          cart.RecalculateTotal()
+
+          // Save cart
+          return s.cartRepo.Save(ctx, cart)
+      }
+      ```
+    position: "after"
+    priority: 8
+
+  - agent_type: "database"
+    section: "context"
+    content: |
+      E-commerce database requirements:
+      - Use PostgreSQL with proper indexing for product searches
+      - Implement proper foreign key constraints for referential integrity
+      - Create composite indices on (category_id, is_active, created_at)
+      - Use partial indices for active products only
+      - Implement proper inventory locking mechanisms
+      - Use DECIMAL types for all monetary values
+      - Set up read replicas for product catalog queries
+      - Implement proper archival strategy for old orders
+    position: "before"
+    priority: 9
+
+  - agent_type: "frontend"
+    section: "context"
+    content: |
+      E-commerce frontend requirements:
+      - Implement responsive product grid layouts
+      - Use lazy loading for product images
+      - Implement real-time inventory status updates
+      - Support product filtering and sorting
+      - Implement autocomplete for product search
+      - Show cart updates in real-time
+      - Support guest checkout flow
+      - Implement proper error handling for out-of-stock scenarios
+    position: "before"
+    priority: 8
+
+validation_rules:
+  - name: "decimal_pricing"
+    type: "data_validation"
+    severity: "error"
+    pattern: "price.*float|float.*price"
+    message: "Product prices must use decimal types, not floating point"
+    remediation: "Replace float types with decimal.Decimal or database NUMERIC type"
+
+  - name: "inventory_concurrency"
+    type: "business_logic"
+    severity: "error"
+    pattern: "UPDATE.*inventory.*without.*lock"
+    message: "Inventory updates must use proper locking to prevent race conditions"
+    remediation: "Implement distributed locking or database-level locking for inventory updates"
+
+  - name: "cart_expiration"
+    type: "business_logic"
+    severity: "warning"
+    pattern: "cart.*without.*expiration"
+    message: "Shopping carts should have expiration timestamps"
+    remediation: "Add expires_at field and implement cart cleanup job"
+
+  - name: "product_indexing"
+    type: "performance"
+    severity: "warning"
+    pattern: "SELECT.*products.*WHERE.*name.*without.*index"
+    message: "Product name searches should use proper indexing"
+    remediation: "Add database index on product name or implement full-text search"
+
+  - name: "order_state_validation"
+    type: "business_logic"
+    severity: "error"
+    pattern: "UPDATE.*order.*status.*without.*validation"
+    message: "Order status changes must validate state transitions"
+    remediation: "Implement order state machine with proper transition validation"
+
+templates:
+  product_controller: |
+    // Product listing with proper pagination and caching
+    func (c *ProductController) ListProducts(w http.ResponseWriter, r *http.Request) {
+        params := c.parseListParams(r)
+
+        // Check cache first
+        cacheKey := fmt.Sprintf("products:%s", params.CacheKey())
+        if cached, found := c.cache.Get(cacheKey); found {
+            w.Header().Set("Content-Type", "application/json")
+            w.Header().Set("Cache-Control", "public, max-age=300")
+            w.Write(cached.([]byte))
+            return
+        }
+
+        // Query products with pagination
+        products, total, err := c.productService.ListProducts(r.Context(), params)
+        if err != nil {
+            http.Error(w, "Failed to fetch products", http.StatusInternalServerError)
+            return
+        }
+
+        response := ProductListResponse{
+            Products:    products,
+            Total:       total,
+            Page:        params.Page,
+            PerPage:     params.PerPage,
+            TotalPages:  (total + params.PerPage - 1) / params.PerPage,
+        }
+
+        // Serialize response
+        data, err := json.Marshal(response)
+        if err != nil {
+            http.Error(w, "Failed to serialize response", http.StatusInternalServerError)
+            return
+        }
+
+        // Cache response
+        c.cache.Set(cacheKey, data, 5*time.Minute)
+
+        w.Header().Set("Content-Type", "application/json")
+        w.Header().Set("Cache-Control", "public, max-age=300")
+        w.Write(data)
+    }
+
+  inventory_service: |
+    // Inventory management with concurrency control
+    func (s *InventoryService) ReserveInventory(ctx context.Context, productID string, quantity int) error {
+        return s.db.RunInTransaction(ctx, func(tx *sql.Tx) error {
+            // Lock the inventory row
+            var inventory Inventory
+            err := tx.QueryRowContext(ctx, `
+                SELECT product_id, quantity_available, quantity_reserved
+                FROM inventory
+                WHERE product_id = $1
+                FOR UPDATE
+            `, productID).Scan(&inventory.ProductID, &inventory.QuantityAvailable, &inventory.QuantityReserved)
+
+            if err != nil {
+                return err
+            }
+
+            // Check availability
+            availableQty := inventory.QuantityAvailable - inventory.QuantityReserved
+            if availableQty < quantity {
+                return ErrInsufficientInventory
+            }
+
+            // Reserve inventory
+            _, err = tx.ExecContext(ctx, `
+                UPDATE inventory
+                SET quantity_reserved = quantity_reserved + $1,
+                    updated_at = NOW()
+                WHERE product_id = $2
+            `, quantity, productID)
+
+            return err
+        })
+    }

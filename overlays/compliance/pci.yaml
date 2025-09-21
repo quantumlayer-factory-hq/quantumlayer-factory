@@ -1,0 +1,363 @@
+metadata:
+  name: pci
+  version: "1.0.0"
+  type: compliance
+  priority: 10
+  description: PCI-DSS compliance overlay enforcing payment card industry data security standards
+  author: QuantumLayer Factory
+  tags:
+    - pci-dss
+    - compliance
+    - payment-security
+    - card-data
+  created_at: 2025-01-01T00:00:00Z
+  updated_at: 2025-01-01T00:00:00Z
+  config:
+    pci_version: "4.0"
+    compliance_level: "level1"
+
+dependencies:
+  - fintech
+
+ir_modifications:
+  - path: "app.features"
+    operation: "add"
+    value:
+      - "card_data_encryption"
+      - "access_logging"
+      - "network_segmentation"
+      - "vulnerability_scanning"
+      - "secure_key_management"
+      - "file_integrity_monitoring"
+      - "penetration_testing"
+
+  - path: "app.security_requirements"
+    operation: "add"
+    value:
+      - name: "card_data_protection"
+        description: "All cardholder data must be encrypted"
+        controls:
+          - "encrypt_card_data_at_rest"
+          - "encrypt_card_data_in_transit"
+          - "secure_key_management"
+          - "access_control_cardholder_data"
+      - name: "access_control"
+        description: "Implement proper access controls"
+        controls:
+          - "unique_user_ids"
+          - "two_factor_authentication"
+          - "least_privilege_access"
+          - "access_logging"
+      - name: "network_security"
+        description: "Secure network architecture"
+        controls:
+          - "network_segmentation"
+          - "firewall_configuration"
+          - "secure_transmission"
+          - "wireless_security"
+
+prompt_enhancements:
+  - agent_type: "backend"
+    section: "system"
+    content: |
+      You are generating code for a PCI-DSS compliant payment system. Follow these MANDATORY requirements:
+
+      PCI-DSS REQUIREMENT 3 - PROTECT STORED CARDHOLDER DATA:
+      - NEVER store sensitive authentication data (CVV, PIN, magnetic stripe data)
+      - Encrypt all stored cardholder data using AES-256 or stronger
+      - Use secure key management with key rotation
+      - Mask cardholder data when displayed (show only first 6 and last 4 digits)
+      - Implement secure deletion of cardholder data when no longer needed
+
+      PCI-DSS REQUIREMENT 4 - ENCRYPT TRANSMISSION:
+      - Use TLS 1.2 or higher for all cardholder data transmission
+      - Never send cardholder data via unencrypted channels
+      - Implement certificate validation and management
+      - Use secure protocols for data transmission
+
+      PCI-DSS REQUIREMENT 7 - RESTRICT ACCESS:
+      - Implement role-based access control (RBAC)
+      - Limit access to cardholder data on need-to-know basis
+      - Require two-factor authentication for administrative access
+      - Log all access to cardholder data
+
+      PCI-DSS REQUIREMENT 8 - IDENTIFY AND AUTHENTICATE:
+      - Assign unique user IDs to each person with access
+      - Implement strong authentication methods
+      - Secure all authentication credentials
+      - Use multi-factor authentication where required
+
+      PCI-DSS REQUIREMENT 10 - LOG AND MONITOR:
+      - Log all access to cardholder data and system components
+      - Implement log monitoring and alerting
+      - Secure log files from unauthorized modification
+      - Retain logs for at least one year
+    position: "before"
+    priority: 10
+
+  - agent_type: "backend"
+    section: "examples"
+    content: |
+      Example: PCI-Compliant Card Data Handling
+      ```go
+      // CardData represents encrypted cardholder data
+      type CardData struct {
+          ID                string    `json:"id"`
+          TokenizedPAN      string    `json:"tokenized_pan"`      // Tokenized PAN
+          EncryptedPAN      []byte    `json:"-"`                  // Never expose in JSON
+          ExpiryMonth       int       `json:"expiry_month"`
+          ExpiryYear        int       `json:"expiry_year"`
+          CardholderName    string    `json:"cardholder_name"`
+          MaskedPAN         string    `json:"masked_pan"`         // For display only
+          CreatedAt         time.Time `json:"created_at"`
+          LastAccessedAt    time.Time `json:"last_accessed_at"`
+      }
+
+      type PCICompliantCardService struct {
+          encryptor    crypto.Encryptor
+          tokenizer    tokenization.Service
+          auditor      audit.Logger
+          keyManager   kms.KeyManager
+      }
+
+      func (s *PCICompliantCardService) StoreCard(ctx context.Context, req StoreCardRequest) (*CardData, error) {
+          // NEVER store CVV - PCI-DSS Requirement 3.2.2
+          if req.CVV != "" {
+              return nil, errors.New("CVV must not be stored per PCI-DSS")
+          }
+
+          // Validate PAN format
+          if !s.validatePAN(req.PAN) {
+              return nil, errors.New("invalid PAN format")
+          }
+
+          // Generate token for PAN
+          token, err := s.tokenizer.TokenizePAN(req.PAN)
+          if err != nil {
+              return nil, err
+          }
+
+          // Encrypt PAN using AES-256
+          encryptedPAN, err := s.encryptor.Encrypt(req.PAN)
+          if err != nil {
+              return nil, err
+          }
+
+          // Create masked PAN for display (show first 6, last 4)
+          maskedPAN := s.maskPAN(req.PAN)
+
+          cardData := &CardData{
+              ID:              uuid.New().String(),
+              TokenizedPAN:    token,
+              EncryptedPAN:    encryptedPAN,
+              ExpiryMonth:     req.ExpiryMonth,
+              ExpiryYear:      req.ExpiryYear,
+              CardholderName:  req.CardholderName,
+              MaskedPAN:       maskedPAN,
+              CreatedAt:       time.Now(),
+              LastAccessedAt:  time.Now(),
+          }
+
+          // Log cardholder data access - PCI-DSS Requirement 10.2.1
+          s.auditor.LogCardDataAccess(ctx, cardData.ID, "store", "success")
+
+          return cardData, nil
+      }
+
+      func (s *PCICompliantCardService) GetCard(ctx context.Context, cardID string, userID string) (*CardData, error) {
+          // Verify user has access to this card
+          if !s.authorizeCardAccess(ctx, userID, cardID) {
+              s.auditor.LogCardDataAccess(ctx, cardID, "get", "unauthorized")
+              return nil, errors.New("unauthorized access")
+          }
+
+          // Retrieve card data
+          cardData, err := s.repository.GetByID(ctx, cardID)
+          if err != nil {
+              return nil, err
+          }
+
+          // Update last accessed time
+          cardData.LastAccessedAt = time.Now()
+          s.repository.UpdateLastAccessed(ctx, cardID)
+
+          // Log successful access - PCI-DSS Requirement 10.2.1
+          s.auditor.LogCardDataAccess(ctx, cardID, "get", "success")
+
+          return cardData, nil
+      }
+
+      func (s *PCICompliantCardService) maskPAN(pan string) string {
+          if len(pan) < 10 {
+              return strings.Repeat("*", len(pan))
+          }
+          return pan[:6] + strings.Repeat("*", len(pan)-10) + pan[len(pan)-4:]
+      }
+      ```
+    position: "after"
+    priority: 10
+
+  - agent_type: "database"
+    section: "context"
+    content: |
+      PCI-DSS database requirements:
+      - Encrypt all cardholder data at rest using AES-256 or stronger
+      - Implement database-level access controls with unique user accounts
+      - Enable database audit logging for all cardholder data access
+      - Use database encryption for data in transit (TLS 1.2+)
+      - Implement secure backup procedures with encryption
+      - Never store sensitive authentication data (CVV, PIN, magnetic stripe)
+      - Implement automatic log rotation and archival
+      - Use database connection pooling with encrypted connections
+    position: "before"
+    priority: 10
+
+validation_rules:
+  - name: "no_cvv_storage"
+    type: "compliance"
+    severity: "error"
+    pattern: "cvv.*store|store.*cvv|cvv.*database"
+    message: "CVV/CVC must never be stored per PCI-DSS Requirement 3.2.2"
+    remediation: "Remove any code that stores CVV/CVC data"
+
+  - name: "pan_encryption"
+    type: "compliance"
+    severity: "error"
+    pattern: "pan.*varchar.*without.*encrypt|credit.*card.*number.*text"
+    message: "PAN must be encrypted at rest per PCI-DSS Requirement 3.4"
+    remediation: "Encrypt PAN using AES-256 or tokenize the data"
+
+  - name: "cardholder_data_logging"
+    type: "compliance"
+    severity: "error"
+    pattern: "log.*pan|log.*card.*number|print.*pan"
+    message: "Cardholder data must never be logged per PCI-DSS"
+    remediation: "Remove PAN from log statements or use masked/tokenized values"
+
+  - name: "tls_requirement"
+    type: "compliance"
+    severity: "error"
+    pattern: "http.*payment|payment.*http|card.*data.*http"
+    message: "Cardholder data transmission must use TLS 1.2+ per PCI-DSS Requirement 4.1"
+    remediation: "Use HTTPS with TLS 1.2 or higher for all cardholder data transmission"
+
+  - name: "access_logging"
+    type: "compliance"
+    severity: "error"
+    pattern: "cardholder.*data.*access.*without.*log"
+    message: "All cardholder data access must be logged per PCI-DSS Requirement 10.2"
+    remediation: "Add audit logging for all cardholder data access operations"
+
+  - name: "authentication_requirement"
+    type: "compliance"
+    severity: "warning"
+    pattern: "cardholder.*data.*without.*auth"
+    message: "Cardholder data access should require strong authentication per PCI-DSS Requirement 8"
+    remediation: "Implement multi-factor authentication for cardholder data access"
+
+templates:
+  card_controller: |
+    // PCI-compliant card data handling controller
+    func (c *CardController) StoreCard(w http.ResponseWriter, r *http.Request) {
+        // Ensure HTTPS connection - PCI-DSS Requirement 4.1
+        if r.TLS == nil {
+            http.Error(w, "HTTPS required for cardholder data", http.StatusBadRequest)
+            return
+        }
+
+        // Verify TLS version
+        if r.TLS.Version < tls.VersionTLS12 {
+            http.Error(w, "TLS 1.2+ required", http.StatusBadRequest)
+            return
+        }
+
+        // Parse request
+        var req StoreCardRequest
+        if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+            http.Error(w, "Invalid request", http.StatusBadRequest)
+            return
+        }
+
+        // Validate request - never accept CVV for storage
+        if req.CVV != "" {
+            c.auditor.LogSecurityViolation("cvv_storage_attempt", r.RemoteAddr)
+            http.Error(w, "CVV cannot be stored", http.StatusBadRequest)
+            return
+        }
+
+        // Get authenticated user
+        userID := c.getUserID(r)
+        if userID == "" {
+            http.Error(w, "Authentication required", http.StatusUnauthorized)
+            return
+        }
+
+        // Store card with PCI compliance
+        cardData, err := c.cardService.StoreCard(r.Context(), req)
+        if err != nil {
+            c.logger.Error("Failed to store card", "error", err, "user_id", userID)
+            http.Error(w, "Failed to store card", http.StatusInternalServerError)
+            return
+        }
+
+        // Return response without sensitive data
+        response := StoreCardResponse{
+            CardID:    cardData.ID,
+            MaskedPAN: cardData.MaskedPAN,
+            Token:     cardData.TokenizedPAN,
+        }
+
+        w.Header().Set("Content-Type", "application/json")
+        w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+        json.NewEncoder(w).Encode(response)
+    }
+
+  encryption_middleware: |
+    // PCI-compliant encryption middleware
+    func PCIEncryptionMiddleware(keyManager kms.KeyManager) func(http.Handler) http.Handler {
+        return func(next http.Handler) http.Handler {
+            return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                // Ensure all cardholder data requests use encryption
+                if containsCardholderData(r) {
+                    // Verify TLS configuration
+                    if r.TLS == nil || r.TLS.Version < tls.VersionTLS12 {
+                        http.Error(w, "Secure connection required", http.StatusBadRequest)
+                        return
+                    }
+
+                    // Add encryption context to request
+                    ctx := context.WithValue(r.Context(), "encryption_key", keyManager.GetCurrentKey())
+                    r = r.WithContext(ctx)
+                }
+
+                next.ServeHTTP(w, r)
+            })
+        }
+    }
+
+  audit_logger: |
+    // PCI-compliant audit logging
+    type PCIAuditLogger struct {
+        logger    *slog.Logger
+        encryptor crypto.Encryptor
+    }
+
+    func (a *PCIAuditLogger) LogCardDataAccess(ctx context.Context, cardID, operation, result string) {
+        userID := getUserIDFromContext(ctx)
+        clientIP := getClientIPFromContext(ctx)
+
+        auditEvent := AuditEvent{
+            Timestamp:   time.Now(),
+            UserID:      userID,
+            ClientIP:    clientIP,
+            ResourceID:  cardID,
+            Operation:   operation,
+            Result:      result,
+            Component:   "card_service",
+        }
+
+        a.logger.Info("cardholder_data_access",
+            "event", auditEvent,
+            "pci_requirement", "10.2.1",
+        )
+    }

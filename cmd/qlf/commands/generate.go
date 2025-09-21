@@ -12,14 +12,17 @@ import (
 	"github.com/spf13/cobra"
 	"go.temporal.io/sdk/client"
 
+	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/ir"
 	wf "github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/workflows"
 )
 
 var (
-	flagDryRun  bool
-	flagVerbose bool
-	flagOutput  string
-	flagAsync   bool
+	flagDryRun         bool
+	flagVerbose        bool
+	flagOutput         string
+	flagAsync          bool
+	flagOverlays       []string
+	flagSuggestOverlay bool
 )
 
 func NewGenerateCmd() *cobra.Command {
@@ -34,6 +37,8 @@ func NewGenerateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Verbose progress")
 	cmd.Flags().StringVarP(&flagOutput, "output", "o", "", "Output directory (default from config)")
 	cmd.Flags().BoolVar(&flagAsync, "async", false, "Return immediately with WorkflowID; use 'qlf status' to follow")
+	cmd.Flags().StringSliceVar(&flagOverlays, "overlay", []string{}, "Apply specific overlays (e.g., --overlay fintech,pci)")
+	cmd.Flags().BoolVar(&flagSuggestOverlay, "suggest-overlays", false, "Show suggested overlays without generating code")
 	return cmd
 }
 
@@ -53,6 +58,11 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 	if brief == "" {
 		return fmt.Errorf("no brief provided (arg or stdin)")
+	}
+
+	// Handle overlay suggestion mode
+	if flagSuggestOverlay {
+		return showOverlaySuggestions(brief)
 	}
 
 	if flagOutput == "" {
@@ -79,6 +89,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		DryRun:    flagDryRun,
 		Verbose:   flagVerbose,
 		OutputDir: flagOutput,
+		Overlays:  flagOverlays,
 	}
 
 	we, err := c.ExecuteWorkflow(context.Background(), opts, wf.FactoryWorkflow, input)
@@ -150,4 +161,96 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// showOverlaySuggestions analyzes the brief and shows suggested overlays
+func showOverlaySuggestions(brief string) error {
+	// Import here to avoid import cycles
+	compiler := ir.NewCompiler()
+	suggestions := compiler.SuggestOverlays(brief)
+
+	if len(suggestions.Suggestions) == 0 {
+		fmt.Println("No specific overlays detected for this brief.")
+		fmt.Println("You can manually specify overlays using --overlay flag.")
+		return nil
+	}
+
+	fmt.Printf("🔍 Overlay Analysis for: %s\n\n", color.CyanString(brief))
+
+	// High-confidence suggestions (auto-apply)
+	if len(suggestions.AutoApply) > 0 {
+		fmt.Println(color.GreenString("✅ Recommended Overlays (high confidence):"))
+		for _, overlay := range suggestions.AutoApply {
+			fmt.Printf("  - %s\n", color.New(color.Bold).Sprint(overlay))
+		}
+		fmt.Println()
+	}
+
+	// All suggestions with details
+	fmt.Println(color.BlueString("📋 Detected Overlays:"))
+	for _, suggestion := range suggestions.Suggestions {
+		confidenceColor := color.GreenString
+		if suggestion.Confidence < 0.7 {
+			confidenceColor = color.YellowString
+		}
+		if suggestion.Confidence < 0.5 {
+			confidenceColor = color.RedString
+		}
+
+		fmt.Printf("  %s %s (%s)\n",
+			getOverlayTypeIcon(suggestion.Type),
+			color.New(color.Bold).Sprint(suggestion.Name),
+			suggestion.Type)
+		fmt.Printf("    Confidence: %s\n", confidenceColor("%.0f%%", suggestion.Confidence*100))
+		fmt.Printf("    Reason: %s\n", suggestion.Reason)
+		if len(suggestion.Keywords) > 0 {
+			fmt.Printf("    Keywords: %s\n", color.New(color.Faint).Sprint(strings.Join(suggestion.Keywords, ", ")))
+		}
+		fmt.Println()
+	}
+
+	// Warnings
+	if len(suggestions.Warnings) > 0 {
+		fmt.Println(color.YellowString("⚠️  Warnings:"))
+		for _, warning := range suggestions.Warnings {
+			fmt.Printf("  - %s\n", warning)
+		}
+		fmt.Println()
+	}
+
+	// Usage examples
+	fmt.Println(color.CyanString("💡 Usage Examples:"))
+
+	if len(suggestions.AutoApply) > 0 {
+		overlayList := strings.Join(suggestions.AutoApply, ",")
+		fmt.Printf("  # Apply recommended overlays:\n")
+		fmt.Printf("  qlf generate \"%s\" --overlay %s\n\n", brief, overlayList)
+	}
+
+	if len(suggestions.Suggestions) > 1 {
+		allOverlays := make([]string, len(suggestions.Suggestions))
+		for i, s := range suggestions.Suggestions {
+			allOverlays[i] = s.Name
+		}
+		overlayList := strings.Join(allOverlays, ",")
+		fmt.Printf("  # Apply all detected overlays:\n")
+		fmt.Printf("  qlf generate \"%s\" --overlay %s\n\n", brief, overlayList)
+	}
+
+	fmt.Printf("  # Generate without overlays:\n")
+	fmt.Printf("  qlf generate \"%s\"\n", brief)
+
+	return nil
+}
+
+// getOverlayTypeIcon returns an icon for the overlay type
+func getOverlayTypeIcon(overlayType string) string {
+	switch overlayType {
+	case "domain":
+		return "🏢"
+	case "compliance":
+		return "⚖️"
+	default:
+		return "📦"
+	}
 }

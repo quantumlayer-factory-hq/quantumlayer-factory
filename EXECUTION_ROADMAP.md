@@ -3,15 +3,19 @@
 ## Overview
 Building on completed Phase 1 (SOC Parser) and Phase 2 Core (IR + Agents), this roadmap delivers the full production system.
 
-## Current Status: Week 0 Complete ✅
+## Current Status: Week 2 Complete ✅
 - ✅ SOC Parser (kernel/soc/) - 11/11 tests
-- ✅ IR Compiler (kernel/ir/) - 13/13 tests
+- ✅ IR Compiler (kernel/ir/) - 20+ tests (enhanced with overlay support)
 - ✅ Agent Factory + Backend Agent (kernel/agents/) - 6/6 tests
 - ✅ Docker Infrastructure (Postgres, Redis, Temporal, Qdrant, MinIO)
+- ✅ Temporal Workflows (kernel/workflows/) - 8/8 tests
+- ✅ CLI Interface (cmd/qlf/) - 5/5 tests + overlay commands
+- ✅ Overlay System (overlays/) - 15/15 tests + 6 production overlays
+- ✅ Prompt Enhancement (kernel/prompts/) - 30/30 tests
 
 ---
 
-## Week 1: Foundation Hardening ✅ AHEAD OF SCHEDULE
+## Week 1: Foundation Hardening ✅ COMPLETE
 **Goal**: Complete verifier framework, basic Temporal workflow, CLI
 
 ### W1.1: Static Analysis Gate (3 days) ✅ COMPLETED
@@ -54,75 +58,159 @@ kernel/workflows/
 - ✅ Activity timeout and cancellation
 - ✅ Integration tests with Temporal framework
 
-### W1.3: CLI Generate Command (2 days) 🔄 IN PROGRESS
-**Status**: 🔄 Starting
+### W1.3: CLI Generate Command (2 days) ✅ COMPLETED
+**Status**: ✅ Done
 **Owner**: Engineering
 **Deliverables**:
 ```
 cmd/qlf/
-├── main.go               # CLI entry point
+├── main.go               # CLI entry point ✅
 ├── commands/
-│   ├── generate.go       # Generate command implementation
-│   ├── status.go         # Workflow status command
-│   └── config.go         # Configuration management
-├── config/
-│   └── config.yaml       # Default configuration
-└── cli_test.go           # CLI integration tests
+│   ├── generate.go       # Generate command implementation ✅
+│   ├── status.go         # Workflow status command ✅
+│   ├── config.go         # Configuration management ✅
+│   ├── root.go          # Root command structure ✅
+│   ├── temporal_client.go # Temporal client helpers ✅
+│   └── cli_test.go      # CLI integration tests (5/5 passing) ✅
+cmd/worker/               # Temporal worker for activity processing ✅
+└── bin/                  # Built executables ✅
 ```
 
 **Acceptance Criteria**:
-- [ ] `qlf generate "brief"` command working
-- [ ] `--dry-run` and `--verbose` flags
-- [ ] `--output` directory specification
-- [ ] Progress tracking and status display
-- [ ] Configuration file support
+- ✅ `qlf generate "brief"` command working
+- ✅ `--dry-run` and `--verbose` flags
+- ✅ `--output` directory specification
+- ✅ Progress tracking and status display
+- ✅ Configuration file support
+- ✅ Temporal workflow integration
+- ✅ SOC-formatted dry-run output
 
-**Week 1 Success Metric**:
+**Week 1 Success Metric**: ✅ ACHIEVED
 ```bash
 echo "Create a FastAPI user management system" | qlf generate --dry-run
-# Should output: IR → Generated Code → Validation Results
+# ✅ Outputs: IR → Generated Code → Validation Results in SOC format
+# ✅ End-to-end execution time: ~42ms
+# ✅ CLI working with Temporal orchestration
 ```
 
 ---
 
-## Week 2: Overlay Engine
+## Week 2: Overlay Engine ✅ COMPLETE
 **Goal**: Pluggable domain/compliance overlays
+**Status**: ✅ COMPLETED - Full overlay system with intelligent detection and CLI integration
 
-### W2.1: Overlay System (3 days)
+### W2.1: Overlay System (3 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
 **Deliverables**:
 ```
 overlays/
-├── types.go              # Overlay interface, resolver types
-├── resolver.go           # Overlay resolution engine
+├── types.go              # Overlay interface, resolver types ✅
+├── resolver.go           # Overlay resolution engine ✅
 ├── domains/
-│   ├── fintech.yaml      # Financial services overlay
-│   ├── healthcare.yaml   # Healthcare/HIPAA overlay
-│   └── ecommerce.yaml    # E-commerce overlay
+│   ├── fintech.yaml      # Financial services overlay ✅
+│   ├── healthcare.yaml   # Healthcare/HIPAA overlay ✅
+│   └── ecommerce.yaml    # E-commerce overlay ✅
 ├── compliance/
-│   ├── pci.yaml          # PCI-DSS compliance overlay
-│   ├── hipaa.yaml        # HIPAA compliance overlay
-│   └── gdpr.yaml         # GDPR compliance overlay
-└── resolver_test.go      # Overlay resolution tests
+│   ├── pci.yaml          # PCI-DSS compliance overlay ✅
+│   ├── hipaa.yaml        # HIPAA compliance overlay ✅
+│   └── gdpr.yaml         # GDPR compliance overlay ✅
+└── resolver_test.go      # Overlay resolution tests (15/15 passing) ✅
 ```
 
-### W2.2: Prompt Enhancement (2 days)
+**Acceptance Criteria**:
+- ✅ Domain overlays with industry-specific patterns and code examples
+- ✅ Compliance overlays enforcing regulatory requirements
+- ✅ Dependency resolution with proper ordering
+- ✅ Priority-based conflict resolution
+- ✅ File system-based overlay loading and caching
+- ✅ Comprehensive test coverage with all tests passing
+
+**Key Deliverables Achieved**:
+- **3 Domain Overlays**: Fintech (payments, fraud detection), Healthcare (PHI protection), E-commerce (inventory, orders)
+- **3 Compliance Overlays**: PCI-DSS (card data security), HIPAA (healthcare privacy), GDPR (data protection)
+- **Production-Ready Code**: Extensive prompt enhancements and validation rules
+- **Real-World Examples**: Authentication, encryption, audit logging, consent management
+- **Framework Foundation**: Extensible overlay system for future domains/compliance requirements
+
+### W2.2: Prompt Enhancement (2 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
 **Deliverables**:
 ```
 kernel/prompts/
-├── composer.go           # Meta-prompt composition
+├── composer.go           # Meta-prompt composition ✅
+├── template_manager.go   # Template loading and management ✅
 ├── templates/
-│   ├── backend.tmpl      # Backend agent prompt template
-│   ├── frontend.tmpl     # Frontend agent prompt template
-│   └── security.tmpl     # Security-focused prompts
-└── composer_test.go      # Prompt composition tests
+│   ├── backend.tmpl      # Backend agent prompt template ✅
+│   ├── frontend.tmpl     # Frontend agent prompt template ✅
+│   └── database.tmpl     # Database agent prompt template ✅
+├── composer_test.go      # Prompt composition tests ✅
+└── integration_test.go   # End-to-end integration tests ✅
 ```
 
-### W2.3: Enhanced IR Compiler (2 days)
+**Acceptance Criteria**:
+- ✅ Overlay-aware prompt composition system
+- ✅ Template engine for dynamic prompt generation
+- ✅ Agent-specific prompt templates (backend, frontend, database)
+- ✅ Prompt enhancement injection from overlays
+- ✅ Context-aware prompt building
+- ✅ Section-based prompt enhancement (before/after/replace)
+- ✅ Conditional enhancements based on IR context
+- ✅ Priority-based enhancement ordering
+- ✅ Comprehensive test coverage (30/30 tests passing)
+
+**Key Deliverables Achieved**:
+- **Complete Prompt Composition System**: Dynamic prompt generation with overlay integration
+- **3 Production Templates**: Backend, frontend, database agent templates with comprehensive guidance
+- **Template Management**: File-based template loading with fallback basic templates
+- **Enhancement Processing**: Before/after/replace positioning with conditional logic
+- **Integration Testing**: End-to-end tests with real overlays and multi-agent scenarios
+- **Performance Features**: Caching, large prompt handling, length warnings
+
+### W2.3: Enhanced IR Compiler (2 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
 **Deliverables**:
-- Overlay-aware IR compilation
-- Compliance requirement injection
-- Domain-specific entity detection
-- Policy attachment to IR nodes
+```
+kernel/ir/
+├── overlay_detector.go    # Pattern-based overlay detection ✅
+├── compiler.go           # Enhanced compiler with overlay support ✅
+├── overlay_detector_test.go # Overlay detection tests ✅
+└── compiler_overlay_test.go # Compiler integration tests ✅
+
+cmd/qlf/commands/
+├── generate.go           # Enhanced with overlay flags ✅
+└── overlays.go          # Overlay management commands ✅
+
+kernel/workflows/
+├── factory_workflow.go   # Updated with overlay support ✅
+└── activities.go        # Activities enhanced for overlays ✅
+```
+
+**Acceptance Criteria**:
+- ✅ Automatic overlay detection from brief text with confidence scoring
+- ✅ `--overlay` flag for explicit overlay specification
+- ✅ `--suggest-overlays` flag for brief analysis without generation
+- ✅ `qlf overlays list` and `qlf overlays describe` commands
+- ✅ Workflow integration with overlay information threading
+- ✅ End-to-end testing with multiple overlay combinations
+- ✅ Overlay compatibility validation and warning system
+
+**Key Deliverables Achieved**:
+- **Intelligent Overlay Detection**: Pattern-based detection with 0.3-1.0 confidence scoring
+- **CLI Integration**: Complete overlay management through CLI commands
+- **Workflow Enhancement**: Full integration with Temporal workflows
+- **Production Testing**: Verified with fintech, healthcare, and compliance overlays
+- **Real-World Examples**: Payment processing + fraud detection, patient data + HIPAA compliance
+
+**Week 2 Success Metric**: ✅ ACHIEVED
+```bash
+qlf generate "Build a payment processing API with fraud detection" --overlay fintech --dry-run
+# ✅ Outputs: Overlay-enhanced IR → Domain-aware Generated Code
+# ✅ CLI overlay management: list, describe, suggest-overlays working
+# ✅ End-to-end execution with overlay integration working
+```
 
 ---
 

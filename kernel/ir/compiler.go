@@ -9,8 +9,9 @@ import (
 
 // Compiler transforms natural language briefs into structured IR specifications
 type Compiler struct {
-	patterns map[string]*regexp.Regexp
-	defaults CompilerDefaults
+	patterns        map[string]*regexp.Regexp
+	defaults        CompilerDefaults
+	overlayDetector *OverlayDetector
 }
 
 // CompilerDefaults provides sensible defaults for common patterns
@@ -23,17 +24,21 @@ type CompilerDefaults struct {
 
 // CompilationResult contains the IR spec and any issues found
 type CompilationResult struct {
-	Spec      *IRSpec            `json:"spec"`
-	Questions []BlockingQuestion `json:"questions"`
-	Warnings  []string           `json:"warnings"`
-	Confidence float64           `json:"confidence"`
+	Spec               *IRSpec                 `json:"spec"`
+	Questions          []BlockingQuestion      `json:"questions"`
+	Warnings           []string                `json:"warnings"`
+	Confidence         float64                 `json:"confidence"`
+	OverlayDetection   *OverlayDetectionResult `json:"overlay_detection,omitempty"`
+	SuggestedOverlays  []string                `json:"suggested_overlays,omitempty"`
+	RequiredOverlays   []string                `json:"required_overlays,omitempty"`
 }
 
 // NewCompiler creates a new IR compiler with default patterns
 func NewCompiler() *Compiler {
 	return &Compiler{
-		patterns: initializePatterns(),
-		defaults: getDefaults(),
+		patterns:        initializePatterns(),
+		defaults:        getDefaults(),
+		overlayDetector: NewOverlayDetector(),
 	}
 }
 
@@ -80,12 +85,72 @@ func (c *Compiler) Compile(brief string) (*CompilationResult, error) {
 	// Generate warnings
 	warnings := c.generateWarnings(spec)
 
+	// Detect overlays from brief
+	overlayDetection := c.overlayDetector.DetectOverlays(brief)
+
+	// Extract suggested and required overlays
+	var suggestedOverlays []string
+	var requiredOverlays []string
+
+	for _, suggestion := range overlayDetection.Suggestions {
+		if suggestion.Confidence >= 0.8 {
+			requiredOverlays = append(requiredOverlays, suggestion.Name)
+		} else if suggestion.Confidence >= 0.5 {
+			suggestedOverlays = append(suggestedOverlays, suggestion.Name)
+		}
+	}
+
+	// Add overlay warnings to main warnings
+	warnings = append(warnings, overlayDetection.Warnings...)
+
 	return &CompilationResult{
-		Spec:       spec,
-		Questions:  questions,
-		Warnings:   warnings,
-		Confidence: confidence,
+		Spec:              spec,
+		Questions:         questions,
+		Warnings:          warnings,
+		Confidence:        confidence,
+		OverlayDetection:  overlayDetection,
+		SuggestedOverlays: suggestedOverlays,
+		RequiredOverlays:  requiredOverlays,
 	}, nil
+}
+
+// CompileWithOverlays compiles a brief with explicitly specified overlays
+func (c *Compiler) CompileWithOverlays(brief string, overlays []string) (*CompilationResult, error) {
+	// First get the base compilation result
+	result, err := c.Compile(brief)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate overlay compatibility
+	compatibilityWarnings := c.overlayDetector.ValidateOverlayCompatibility(overlays, result.Spec)
+	result.Warnings = append(result.Warnings, compatibilityWarnings...)
+
+	// Add the explicitly specified overlays
+	result.RequiredOverlays = append(result.RequiredOverlays, overlays...)
+
+	// Remove duplicates from suggested overlays that are already in required
+	filteredSuggested := []string{}
+	for _, suggested := range result.SuggestedOverlays {
+		found := false
+		for _, required := range result.RequiredOverlays {
+			if suggested == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			filteredSuggested = append(filteredSuggested, suggested)
+		}
+	}
+	result.SuggestedOverlays = filteredSuggested
+
+	return result, nil
+}
+
+// SuggestOverlays analyzes a brief and returns overlay suggestions without full compilation
+func (c *Compiler) SuggestOverlays(brief string) *OverlayDetectionResult {
+	return c.overlayDetector.DetectOverlays(brief)
 }
 
 // normalizeBrief cleans and standardizes the input text

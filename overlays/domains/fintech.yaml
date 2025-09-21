@@ -1,0 +1,292 @@
+metadata:
+  name: fintech
+  version: "1.0.0"
+  type: domain
+  priority: 5
+  description: Financial services domain overlay with payment processing, fraud detection, and financial data handling patterns
+  author: QuantumLayer Factory
+  tags:
+    - fintech
+    - payments
+    - financial-services
+    - banking
+  created_at: 2025-01-01T00:00:00Z
+  updated_at: 2025-01-01T00:00:00Z
+  config:
+    default_currency: "USD"
+    precision_digits: "2"
+
+dependencies: []
+
+ir_modifications:
+  - path: "app.features"
+    operation: "add"
+    value:
+      - "payment_processing"
+      - "fraud_detection"
+      - "transaction_logging"
+      - "customer_kyc"
+      - "audit_trail"
+      - "rate_limiting"
+      - "idempotency"
+
+  - path: "app.stack.backend.database"
+    operation: "replace"
+    value: "postgresql"
+    condition: "when database not specified"
+
+  - path: "app.entities"
+    operation: "add"
+    value:
+      - name: "Account"
+        fields:
+          - name: "account_number"
+            type: "string"
+            encrypted: true
+          - name: "balance"
+            type: "decimal"
+            precision: 15
+            scale: 2
+          - name: "currency"
+            type: "string"
+            default: "USD"
+          - name: "status"
+            type: "enum"
+            values: ["active", "suspended", "closed"]
+      - name: "Transaction"
+        fields:
+          - name: "transaction_id"
+            type: "uuid"
+            primary_key: true
+          - name: "amount"
+            type: "decimal"
+            precision: 15
+            scale: 2
+          - name: "currency"
+            type: "string"
+          - name: "type"
+            type: "enum"
+            values: ["debit", "credit", "transfer"]
+          - name: "status"
+            type: "enum"
+            values: ["pending", "completed", "failed", "cancelled"]
+          - name: "created_at"
+            type: "timestamp"
+            immutable: true
+          - name: "processed_at"
+            type: "timestamp"
+      - name: "Customer"
+        fields:
+          - name: "customer_id"
+            type: "uuid"
+            primary_key: true
+          - name: "kyc_status"
+            type: "enum"
+            values: ["pending", "verified", "rejected"]
+          - name: "risk_score"
+            type: "integer"
+            min: 0
+            max: 100
+
+prompt_enhancements:
+  - agent_type: "backend"
+    section: "system"
+    content: |
+      You are generating code for a financial services application. Follow these critical requirements:
+
+      SECURITY REQUIREMENTS:
+      - All financial data must be encrypted at rest and in transit
+      - Implement proper authentication and authorization
+      - Use secure random generation for transaction IDs and tokens
+      - Never log sensitive financial data (account numbers, balances, etc.)
+      - Implement rate limiting and request throttling
+
+      COMPLIANCE REQUIREMENTS:
+      - Maintain immutable audit trails for all transactions
+      - Implement idempotency for all financial operations
+      - Use decimal types for monetary values (never floats)
+      - Validate all financial calculations with precision
+      - Implement proper error handling without data leakage
+
+      BUSINESS LOGIC:
+      - Always validate account balances before transactions
+      - Implement proper transaction state management
+      - Handle currency conversions if multi-currency
+      - Implement fraud detection hooks
+      - Use database transactions for financial operations
+    position: "before"
+    priority: 10
+
+  - agent_type: "backend"
+    section: "examples"
+    content: |
+      Example: Secure Payment Processing Endpoint
+      ```go
+      type PaymentRequest struct {
+          FromAccount   string          `json:"from_account" validate:"required"`
+          ToAccount     string          `json:"to_account" validate:"required"`
+          Amount        decimal.Decimal `json:"amount" validate:"required,gt=0"`
+          Currency      string          `json:"currency" validate:"required,len=3"`
+          Description   string          `json:"description" validate:"max=255"`
+          IdempotencyKey string         `json:"idempotency_key" validate:"required,uuid"`
+      }
+
+      func (s *PaymentService) ProcessPayment(ctx context.Context, req PaymentRequest) (*PaymentResponse, error) {
+          // Check idempotency
+          if existing, err := s.checkIdempotency(ctx, req.IdempotencyKey); err != nil {
+              return nil, err
+          } else if existing != nil {
+              return existing, nil
+          }
+
+          // Start database transaction
+          tx, err := s.db.BeginTx(ctx, nil)
+          if err != nil {
+              return nil, err
+          }
+          defer tx.Rollback()
+
+          // Validate accounts and balances
+          fromAccount, err := s.validateAccount(ctx, tx, req.FromAccount)
+          if err != nil {
+              return nil, err
+          }
+
+          if fromAccount.Balance.LessThan(req.Amount) {
+              return nil, ErrInsufficientFunds
+          }
+
+          // Create transaction record
+          txnID := uuid.New()
+          transaction := &Transaction{
+              ID:          txnID,
+              FromAccount: req.FromAccount,
+              ToAccount:   req.ToAccount,
+              Amount:      req.Amount,
+              Currency:    req.Currency,
+              Status:      "pending",
+              CreatedAt:   time.Now(),
+          }
+
+          // Process payment with audit trail
+          if err := s.executePayment(ctx, tx, transaction); err != nil {
+              return nil, err
+          }
+
+          // Commit transaction
+          if err := tx.Commit(); err != nil {
+              return nil, err
+          }
+
+          return &PaymentResponse{TransactionID: txnID}, nil
+      }
+      ```
+    position: "after"
+    priority: 8
+
+  - agent_type: "database"
+    section: "context"
+    content: |
+      Financial database requirements:
+      - Use PostgreSQL with proper indexing for financial queries
+      - Implement proper foreign key constraints
+      - Use CHECK constraints for data integrity
+      - Create indices on transaction timestamps and account numbers
+      - Use DECIMAL/NUMERIC types for all monetary values
+      - Implement proper backup and point-in-time recovery
+      - Use read replicas for reporting queries
+    position: "before"
+    priority: 9
+
+validation_rules:
+  - name: "decimal_precision"
+    type: "data_validation"
+    severity: "error"
+    pattern: "float.*money|money.*float"
+    message: "Financial amounts must use decimal types, not floating point"
+    remediation: "Replace float types with decimal.Decimal or database NUMERIC type"
+
+  - name: "transaction_idempotency"
+    type: "business_logic"
+    severity: "error"
+    pattern: "POST.*transaction.*without.*idempotency"
+    message: "Financial transactions must implement idempotency"
+    remediation: "Add idempotency key validation and duplicate transaction checking"
+
+  - name: "audit_trail"
+    type: "compliance"
+    severity: "error"
+    pattern: "UPDATE.*account.*balance.*without.*audit"
+    message: "Financial operations must maintain immutable audit trails"
+    remediation: "Add audit logging before any financial data modifications"
+
+  - name: "encryption_at_rest"
+    type: "security"
+    severity: "error"
+    pattern: "account_number.*varchar.*without.*encryption"
+    message: "Sensitive financial data must be encrypted at rest"
+    remediation: "Use encrypted database columns or application-level encryption"
+
+  - name: "rate_limiting"
+    type: "security"
+    severity: "warning"
+    pattern: "payment.*endpoint.*without.*rate.*limit"
+    message: "Payment endpoints should implement rate limiting"
+    remediation: "Add rate limiting middleware to prevent abuse"
+
+templates:
+  payment_controller: |
+    // Payment processing with proper error handling and audit trails
+    func (c *PaymentController) ProcessPayment(w http.ResponseWriter, r *http.Request) {
+        // Rate limiting check
+        if !c.rateLimiter.Allow() {
+            http.Error(w, "Too many requests", http.StatusTooManyRequests)
+            return
+        }
+
+        // Parse and validate request
+        var req PaymentRequest
+        if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+            c.auditLogger.LogError("invalid_payment_request", err)
+            http.Error(w, "Invalid request", http.StatusBadRequest)
+            return
+        }
+
+        // Process payment
+        result, err := c.paymentService.ProcessPayment(r.Context(), req)
+        if err != nil {
+            c.auditLogger.LogPaymentFailure(req.IdempotencyKey, err)
+            http.Error(w, "Payment failed", http.StatusInternalServerError)
+            return
+        }
+
+        c.auditLogger.LogPaymentSuccess(result.TransactionID)
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(result)
+    }
+
+  fraud_detection: |
+    // Simple fraud detection middleware
+    func (m *FraudDetectionMiddleware) CheckTransaction(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            // Extract transaction details
+            var req PaymentRequest
+            // ... parse request ...
+
+            // Check velocity rules
+            if m.exceedsVelocityLimits(req) {
+                m.flagTransaction(req, "velocity_exceeded")
+                http.Error(w, "Transaction flagged for review", http.StatusForbidden)
+                return
+            }
+
+            // Check amount limits
+            if req.Amount.GreaterThan(m.config.DailyLimit) {
+                m.flagTransaction(req, "amount_limit_exceeded")
+                http.Error(w, "Amount exceeds daily limit", http.StatusForbidden)
+                return
+            }
+
+            next.ServeHTTP(w, r)
+        })
+    }

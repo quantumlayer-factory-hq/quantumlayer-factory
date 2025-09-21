@@ -1,0 +1,439 @@
+metadata:
+  name: hipaa
+  version: "1.0.0"
+  type: compliance
+  priority: 10
+  description: HIPAA compliance overlay enforcing healthcare data privacy and security requirements
+  author: QuantumLayer Factory
+  tags:
+    - hipaa
+    - healthcare-compliance
+    - phi-protection
+    - privacy
+    - security
+  created_at: 2025-01-01T00:00:00Z
+  updated_at: 2025-01-01T00:00:00Z
+  config:
+    hipaa_version: "2013_omnibus"
+    phi_retention_years: "6"
+    breach_notification_hours: "60"
+
+dependencies:
+  - healthcare
+
+ir_modifications:
+  - path: "app.features"
+    operation: "add"
+    value:
+      - "phi_encryption"
+      - "access_controls"
+      - "audit_logging"
+      - "breach_detection"
+      - "consent_management"
+      - "data_minimization"
+      - "secure_communications"
+      - "backup_encryption"
+
+  - path: "app.security_requirements"
+    operation: "add"
+    value:
+      - name: "administrative_safeguards"
+        description: "HIPAA Administrative Safeguards"
+        controls:
+          - "security_officer_designation"
+          - "workforce_training"
+          - "access_management"
+          - "information_security_incident_procedures"
+          - "contingency_plan"
+      - name: "physical_safeguards"
+        description: "HIPAA Physical Safeguards"
+        controls:
+          - "facility_access_controls"
+          - "workstation_use_restrictions"
+          - "device_controls"
+          - "media_controls"
+      - name: "technical_safeguards"
+        description: "HIPAA Technical Safeguards"
+        controls:
+          - "access_control"
+          - "audit_controls"
+          - "integrity"
+          - "person_authentication"
+          - "transmission_security"
+
+prompt_enhancements:
+  - agent_type: "backend"
+    section: "system"
+    content: |
+      You are generating code for a HIPAA-compliant healthcare system that handles Protected Health Information (PHI). Follow these MANDATORY requirements:
+
+      HIPAA PRIVACY RULE:
+      - Implement minimum necessary standard for PHI access
+      - Obtain patient authorization before using/disclosing PHI
+      - Provide patients with Notice of Privacy Practices
+      - Allow patients to request restrictions on PHI use
+      - Enable patient access to their own PHI
+      - Implement breach notification procedures
+
+      HIPAA SECURITY RULE - ADMINISTRATIVE SAFEGUARDS:
+      - Designate a security officer responsible for HIPAA compliance
+      - Implement workforce training on PHI handling
+      - Create and maintain access control procedures
+      - Establish information security incident response procedures
+      - Develop and maintain contingency plans for emergencies
+
+      HIPAA SECURITY RULE - PHYSICAL SAFEGUARDS:
+      - Control physical access to facilities and workstations
+      - Implement workstation use restrictions
+      - Control access to electronic devices and media
+      - Properly dispose of PHI-containing media
+
+      HIPAA SECURITY RULE - TECHNICAL SAFEGUARDS:
+      - Implement role-based access controls for PHI
+      - Enable comprehensive audit logging
+      - Ensure PHI integrity and prevent unauthorized alteration
+      - Implement strong authentication mechanisms
+      - Encrypt PHI in transmission and at rest
+
+      BREACH NOTIFICATION:
+      - Detect potential breaches within 60 days
+      - Notify HHS within 60 days of breach discovery
+      - Notify affected individuals within 60 days
+      - Notify media if breach affects 500+ individuals
+    position: "before"
+    priority: 10
+
+  - agent_type: "backend"
+    section: "examples"
+    content: |
+      Example: HIPAA-Compliant PHI Access Control
+      ```go
+      type HIPAACompliantService struct {
+          db          *sql.DB
+          encryptor   crypto.PHIEncryptor
+          auditor     audit.HIPAAAuditor
+          authz       authorization.HIPAAService
+          breach      breach.DetectionService
+      }
+
+      func (s *HIPAACompliantService) GetPatientPHI(ctx context.Context, req PHIAccessRequest) (*PatientPHI, error) {
+          // Verify user authentication - Technical Safeguard 164.312(d)
+          userID := getUserIDFromContext(ctx)
+          if userID == "" {
+              return nil, errors.New("authentication required")
+          }
+
+          // Check authorization using minimum necessary standard - Privacy Rule 164.502(b)
+          authorized, reason := s.authz.AuthorizeMinimumNecessary(ctx, userID, req.PatientID, req.Purpose)
+          if !authorized {
+              // Log unauthorized access attempt - Security Rule 164.312(b)
+              s.auditor.LogUnauthorizedPHIAccess(userID, req.PatientID, req.Purpose, reason)
+              return nil, errors.New("access denied: " + reason)
+          }
+
+          // Retrieve encrypted PHI
+          encryptedPHI, err := s.db.QueryContext(ctx, `
+              SELECT patient_id, first_name_encrypted, last_name_encrypted,
+                     ssn_encrypted, phone_encrypted, email_encrypted,
+                     medical_history_encrypted
+              FROM patients
+              WHERE patient_id = $1 AND deleted_at IS NULL
+          `, req.PatientID)
+          if err != nil {
+              return nil, err
+          }
+
+          // Decrypt PHI using purpose-specific keys
+          phi, err := s.decryptPHI(encryptedPHI, req.Purpose)
+          if err != nil {
+              s.breach.ReportPotentialBreach("decryption_failure", req.PatientID, userID)
+              return nil, err
+          }
+
+          // Apply minimum necessary filtering based on purpose
+          filteredPHI := s.applyMinimumNecessary(phi, req.Purpose)
+
+          // Log successful PHI access - Security Rule 164.312(b)
+          s.auditor.LogPHIAccess(HIPAAAuditEvent{
+              UserID:      userID,
+              PatientID:   req.PatientID,
+              Action:      "read",
+              Purpose:     req.Purpose,
+              DataTypes:   s.getAccessedDataTypes(filteredPHI),
+              Timestamp:   time.Now(),
+              ClientIP:    getClientIPFromContext(ctx),
+              UserAgent:   getUserAgentFromContext(ctx),
+              Success:     true,
+          })
+
+          return filteredPHI, nil
+      }
+
+      func (s *HIPAACompliantService) UpdatePatientPHI(ctx context.Context, req PHIUpdateRequest) error {
+          userID := getUserIDFromContext(ctx)
+
+          // Check update authorization
+          if !s.authz.CanUpdatePHI(ctx, userID, req.PatientID, req.DataTypes) {
+              s.auditor.LogUnauthorizedPHIModification(userID, req.PatientID, req.DataTypes)
+              return errors.New("unauthorized to update PHI")
+          }
+
+          // Start database transaction for integrity
+          tx, err := s.db.BeginTx(ctx, nil)
+          if err != nil {
+              return err
+          }
+          defer tx.Rollback()
+
+          // Create audit trail before modification - Security Rule 164.312(c)(1)
+          auditID, err := s.auditor.CreatePreModificationAudit(req.PatientID, req.DataTypes)
+          if err != nil {
+              return err
+          }
+
+          // Encrypt updated PHI
+          encryptedUpdates, err := s.encryptor.EncryptPHIUpdates(req.Updates)
+          if err != nil {
+              return err
+          }
+
+          // Update PHI with integrity checks
+          result, err := tx.ExecContext(ctx, `
+              UPDATE patients
+              SET first_name_encrypted = COALESCE($1, first_name_encrypted),
+                  last_name_encrypted = COALESCE($2, last_name_encrypted),
+                  phone_encrypted = COALESCE($3, phone_encrypted),
+                  updated_at = NOW(),
+                  updated_by = $4
+              WHERE patient_id = $5
+          `, encryptedUpdates.FirstName, encryptedUpdates.LastName,
+             encryptedUpdates.Phone, userID, req.PatientID)
+
+          if err != nil {
+              return err
+          }
+
+          // Verify update succeeded
+          if rowsAffected, _ := result.RowsAffected(); rowsAffected == 0 {
+              return errors.New("patient not found or no changes made")
+          }
+
+          // Commit transaction
+          if err := tx.Commit(); err != nil {
+              return err
+          }
+
+          // Log successful PHI modification
+          s.auditor.LogPHIModification(HIPAAAuditEvent{
+              UserID:      userID,
+              PatientID:   req.PatientID,
+              Action:      "update",
+              DataTypes:   req.DataTypes,
+              AuditID:     auditID,
+              Timestamp:   time.Now(),
+              Success:     true,
+          })
+
+          return nil
+      }
+      ```
+    position: "after"
+    priority: 10
+
+  - agent_type: "database"
+    section: "context"
+    content: |
+      HIPAA database requirements:
+      - Encrypt all PHI at rest using AES-256 or FIPS 140-2 Level 2 approved algorithms
+      - Implement database-level access controls with unique user authentication
+      - Enable comprehensive audit logging for all PHI access and modifications
+      - Use encrypted connections (TLS 1.2+) for all database communications
+      - Implement automatic backup encryption and secure storage
+      - Create database triggers for audit trail generation
+      - Implement data integrity checks and checksums
+      - Use database role-based security aligned with job functions
+      - Implement automatic session timeout (15 minutes maximum)
+      - Enable database activity monitoring and alerting
+    position: "before"
+    priority: 10
+
+  - agent_type: "frontend"
+    section: "context"
+    content: |
+      HIPAA frontend requirements:
+      - Implement automatic session timeout (15 minutes maximum idle time)
+      - Use secure authentication with multi-factor authentication
+      - Never cache PHI in browser storage (localStorage, sessionStorage, cookies)
+      - Implement proper role-based UI controls and field-level security
+      - Use secure HTTPS communication with proper certificate validation
+      - Implement audit logging for all user actions involving PHI
+      - Display patient consent status and privacy notices
+      - Provide mechanism for patients to access their own PHI
+      - Implement secure password requirements and change procedures
+      - Support emergency access procedures with proper audit trails
+    position: "before"
+    priority: 10
+
+validation_rules:
+  - name: "phi_encryption_at_rest"
+    type: "compliance"
+    severity: "error"
+    pattern: "phi.*varchar.*without.*encrypt|patient.*ssn.*text"
+    message: "PHI must be encrypted at rest per HIPAA Security Rule 164.312(a)(2)(iv)"
+    remediation: "Encrypt PHI fields using AES-256 or FIPS 140-2 approved algorithms"
+
+  - name: "phi_audit_logging"
+    type: "compliance"
+    severity: "error"
+    pattern: "phi.*access.*without.*audit|patient.*data.*no.*log"
+    message: "All PHI access must be audited per HIPAA Security Rule 164.312(b)"
+    remediation: "Add comprehensive audit logging for all PHI access and modifications"
+
+  - name: "minimum_necessary"
+    type: "compliance"
+    severity: "error"
+    pattern: "SELECT.*\\*.*FROM.*patients|patient.*all.*fields"
+    message: "PHI access must follow minimum necessary standard per HIPAA Privacy Rule 164.502(b)"
+    remediation: "Select only specific PHI fields needed for the intended purpose"
+
+  - name: "phi_transmission_security"
+    type: "compliance"
+    severity: "error"
+    pattern: "http.*phi|phi.*http|patient.*data.*http"
+    message: "PHI transmission must be encrypted per HIPAA Security Rule 164.312(e)"
+    remediation: "Use HTTPS with TLS 1.2+ for all PHI transmission"
+
+  - name: "session_timeout"
+    type: "compliance"
+    severity: "warning"
+    pattern: "session.*timeout.*greater.*15.*minutes"
+    message: "Healthcare sessions should timeout within 15 minutes per HIPAA best practices"
+    remediation: "Implement automatic session timeout of 15 minutes or less"
+
+  - name: "phi_logging_violation"
+    type: "compliance"
+    severity: "error"
+    pattern: "log.*ssn|log.*patient.*phone|print.*patient.*email"
+    message: "PHI must never be logged in application logs per HIPAA requirements"
+    remediation: "Remove PHI from log statements or use de-identified/masked data"
+
+templates:
+  phi_controller: |
+    // HIPAA-compliant PHI access controller
+    func (c *PHIController) GetPatientData(w http.ResponseWriter, r *http.Request) {
+        patientID := chi.URLParam(r, "patientId")
+        purpose := r.URL.Query().Get("purpose")
+
+        // Validate required parameters
+        if patientID == "" || purpose == "" {
+            http.Error(w, "Patient ID and access purpose required", http.StatusBadRequest)
+            return
+        }
+
+        // Get authenticated user
+        userID := c.getUserID(r)
+        if userID == "" {
+            http.Error(w, "Authentication required", http.StatusUnauthorized)
+            return
+        }
+
+        // Create PHI access request
+        req := PHIAccessRequest{
+            PatientID: patientID,
+            Purpose:   purpose,
+            RequestedBy: userID,
+            ClientIP:  getClientIP(r),
+            UserAgent: r.UserAgent(),
+        }
+
+        // Access PHI with HIPAA compliance checks
+        phi, err := c.phiService.GetPatientPHI(r.Context(), req)
+        if err != nil {
+            if isAuthorizationError(err) {
+                http.Error(w, "Access denied", http.StatusForbidden)
+                return
+            }
+            c.logger.Error("PHI access failed", "error", err, "patient_id", patientID)
+            http.Error(w, "Access failed", http.StatusInternalServerError)
+            return
+        }
+
+        // Set security headers
+        w.Header().Set("Content-Type", "application/json")
+        w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+        w.Header().Set("X-Content-Type-Options", "nosniff")
+        w.Header().Set("X-Frame-Options", "DENY")
+
+        json.NewEncoder(w).Encode(phi)
+    }
+
+  breach_detection: |
+    // HIPAA breach detection and notification service
+    type BreachDetectionService struct {
+        auditor       audit.HIPAAAuditor
+        notifications breach.NotificationService
+        threshold     int // Number of records that constitutes a breach
+    }
+
+    func (s *BreachDetectionService) DetectPotentialBreach(event SecurityEvent) {
+        // Analyze event for breach indicators
+        severity := s.analyzeSeverity(event)
+
+        if severity >= BreachSeverityMedium {
+            breach := &BreachIncident{
+                ID:           uuid.New(),
+                Type:         event.Type,
+                Description:  event.Description,
+                AffectedPHI:  event.AffectedRecords,
+                DetectedAt:   time.Now(),
+                Severity:     severity,
+                Status:       "investigating",
+            }
+
+            // Store breach incident
+            s.auditor.LogBreachIncident(breach)
+
+            // If potential major breach (500+ individuals), immediate notification
+            if len(event.AffectedRecords) >= 500 {
+                s.notifications.NotifyMajorBreach(breach)
+            }
+
+            // Start 60-day notification countdown
+            s.scheduleBreachNotifications(breach)
+        }
+    }
+
+  consent_management: |
+    // HIPAA consent and authorization management
+    type ConsentService struct {
+        db      *sql.DB
+        auditor audit.HIPAAAuditor
+    }
+
+    func (s *ConsentService) CheckPatientConsent(ctx context.Context, patientID, purpose string) (bool, error) {
+        var consent PatientConsent
+        err := s.db.QueryRowContext(ctx, `
+            SELECT consent_id, patient_id, purpose, granted, expires_at,
+                   grantor_signature, witnessed_at
+            FROM patient_consents
+            WHERE patient_id = $1 AND purpose = $2
+              AND granted = true
+              AND (expires_at IS NULL OR expires_at > NOW())
+              AND revoked_at IS NULL
+        `, patientID, purpose).Scan(
+            &consent.ID, &consent.PatientID, &consent.Purpose,
+            &consent.Granted, &consent.ExpiresAt,
+            &consent.GrantorSignature, &consent.WitnessedAt,
+        )
+
+        if err == sql.ErrNoRows {
+            return false, nil
+        }
+        if err != nil {
+            return false, err
+        }
+
+        // Log consent verification
+        s.auditor.LogConsentVerification(patientID, purpose, true)
+        return true, nil
+    }
