@@ -26,6 +26,10 @@ var (
 	flagProvider       string
 	flagModel          string
 	flagCompare        bool
+	flagDeploy         string
+	flagTTL            string
+	flagSubdomain      string
+	flagPort           int
 )
 
 func NewGenerateCmd() *cobra.Command {
@@ -45,6 +49,10 @@ func NewGenerateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&flagProvider, "provider", "", "LLM provider (aws, azure, auto)")
 	cmd.Flags().StringVar(&flagModel, "model", "", "Specific model to use (claude-3-sonnet, gpt-4, etc.)")
 	cmd.Flags().BoolVar(&flagCompare, "compare", false, "Generate with multiple providers for comparison")
+	cmd.Flags().StringVar(&flagDeploy, "deploy", "", "Deploy type: 'preview' for ephemeral preview deployment")
+	cmd.Flags().StringVar(&flagTTL, "ttl", "24h", "Time-to-live for preview deployment (e.g., 1h, 24h, 3d)")
+	cmd.Flags().StringVar(&flagSubdomain, "subdomain", "", "Custom subdomain for preview (auto-generated if not specified)")
+	cmd.Flags().IntVar(&flagPort, "port", 0, "Application port (auto-detected if not specified)")
 	return cmd
 }
 
