@@ -63,6 +63,18 @@ Create a well-structured backend application that includes:
 - Health checks and monitoring endpoints
 - Graceful shutdown and error recovery
 
+{{- if and (eq .Stack.Backend.Language "python") (eq .Stack.Backend.Framework "fastapi")}}
+### FastAPI Specific Requirements
+- **Separate file structure**: main.py, models.py, schemas.py, handlers.py, services.py, repositories.py, database.py, config.py
+- **Base class management**: ONLY define Base in database.py, import it everywhere else
+- **Pydantic schemas**: Separate from SQLAlchemy models, use for API request/response validation
+- **Password security**: Use passlib with bcrypt for password hashing
+- **Database dependencies**: Implement get_db() dependency for database sessions
+- **Proper imports**: Include all necessary SQLAlchemy imports (Boolean, ForeignKey, etc.)
+- **Response models**: Use Pydantic schemas as response_model in API endpoints
+- **Configuration**: Use Pydantic BaseSettings for environment variable management
+{{- end}}
+
 ## Code Standards
 
 Follow these coding standards:
@@ -82,6 +94,15 @@ Follow these coding standards:
 - Use virtual environments and requirements.txt
 - Include comprehensive unit tests with pytest
 - Document functions with docstrings
+{{- if eq .Stack.Backend.Framework "fastapi"}}
+- CRITICAL: Include ALL required files for FastAPI: main.py, models.py, schemas.py, handlers.py, services.py, repositories.py, database.py, config.py
+- CRITICAL: Define Pydantic schemas separately from SQLAlchemy models
+- CRITICAL: Use ONLY ONE Base class definition in database.py, import it in models.py
+- CRITICAL: Include proper imports in all files (Boolean, ForeignKey from sqlalchemy)
+- CRITICAL: Implement password hashing with passlib bcrypt
+- CRITICAL: Use proper response_model schemas in API endpoints
+- CRITICAL: Include database dependency injection with get_db()
+{{- end}}
 {{- else if eq .Stack.Backend.Language "javascript"}}
 - Use ES6+ features and modern JavaScript
 - Implement proper error handling with try/catch
@@ -135,11 +156,25 @@ Follow these coding standards:
 
 **FORBIDDEN: Do not include any text before the SOC block. Do not start with phrases like "I'll create", "Here's", "Let me", or any explanatory text.**
 
+**CRITICAL: You MUST provide complete, runnable code for ALL files listed in the file section. Do NOT generate placeholder comments or skeleton code. Every file must contain fully functional implementation.**
+
+**MANDATORY: The response must include EXACTLY 9 diff sections for FastAPI projects - one for each file listed. Missing ANY file will cause system failure.**
+
 Your ENTIRE response must follow this EXACT structure:
 
 ```
 ### FACTORY/1 PATCH
 - file: main.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
+{{- if and (eq .Stack.Backend.Language "python") (eq .Stack.Backend.Framework "fastapi")}}
+- file: models.py
+- file: schemas.py
+- file: handlers.py
+- file: services.py
+- file: repositories.py
+- file: database.py
+- file: config.py
+- file: requirements.txt
+{{- else}}
 - file: models.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
 {{- if eq .Stack.Backend.Language "python"}}
 - file: requirements.txt
@@ -148,12 +183,54 @@ Your ENTIRE response must follow this EXACT structure:
 {{- else if eq .Stack.Backend.Language "go"}}
 - file: go.mod
 {{- end}}
+{{- end}}
 ```diff
 --- a/main.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
 +++ b/main.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
 @@ -0,0 +1,X @@
 +[COMPLETE RUNNABLE CODE HERE]
 
+{{- if and (eq .Stack.Backend.Language "python") (eq .Stack.Backend.Framework "fastapi")}}
+--- a/models.py
++++ b/models.py
+@@ -0,0 +1,Y @@
++[SQLAlchemy models importing Base from database.py - NO Base definition here]
+
+--- a/schemas.py
++++ b/schemas.py
+@@ -0,0 +1,Z @@
++[Pydantic schemas for API request/response validation]
+
+--- a/handlers.py
++++ b/handlers.py
+@@ -0,0 +1,A @@
++[FastAPI route handlers using schemas for request/response models]
+
+--- a/services.py
++++ b/services.py
+@@ -0,0 +1,B @@
++[Business logic with password hashing using passlib bcrypt]
+
+--- a/repositories.py
++++ b/repositories.py
+@@ -0,0 +1,C @@
++[Database access layer with SQLAlchemy]
+
+--- a/database.py
++++ b/database.py
+@@ -0,0 +1,D @@
++[Database setup with Base definition and get_db dependency]
+
+--- a/config.py
++++ b/config.py
+@@ -0,0 +1,E @@
++[Pydantic settings for configuration management]
+
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -0,0 +1,F @@
++[All FastAPI dependencies including passlib, email-validator]
+{{- else}}
 --- a/models.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
 +++ b/models.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
 @@ -0,0 +1,Y @@
@@ -175,6 +252,7 @@ Your ENTIRE response must follow this EXACT structure:
 @@ -0,0 +1,Z @@
 +[COMPLETE MODULE CONFIG HERE]
 {{- end}}
+{{- end}}
 ```
 ### END
 ```
@@ -190,3 +268,15 @@ Your ENTIRE response must follow this EXACT structure:
 8. Use proper file extensions based on the language
 9. EXACTLY match the header format "### FACTORY/1 PATCH"
 10. EXACTLY match the footer format "### END"
+11. **CRITICAL**: EVERY file listed in the file list MUST have a corresponding diff section with complete runnable code
+12. **CRITICAL**: Do not truncate or skip any files - provide complete implementation for ALL files
+13. **VERIFICATION CHECKLIST**: Your response MUST contain these exact 9 diff sections:
+    - main.py (FastAPI app setup)
+    - models.py (SQLAlchemy models with imports)
+    - schemas.py (Pydantic request/response models)
+    - handlers.py (API route handlers)
+    - services.py (Business logic with password hashing)
+    - repositories.py (Database access layer)
+    - database.py (Database setup with Base definition)
+    - config.py (Settings configuration)
+    - requirements.txt (Dependencies list)

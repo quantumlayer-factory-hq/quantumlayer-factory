@@ -194,7 +194,7 @@ func (a *BackendAgent) generateWithLLM(ctx context.Context, req *GenerationReque
 	llmReq := &llm.GenerateRequest{
 		Prompt:       promptResult.Prompt,
 		Model:        model,
-		MaxTokens:    8192, // Large enough for backend code
+		MaxTokens:    32768, // Large enough for all 9 FastAPI files
 		Temperature:  0.2,  // Low temperature for consistent code generation
 	}
 
@@ -219,7 +219,7 @@ func (a *BackendAgent) generateWithLLM(ctx context.Context, req *GenerationReque
 	// Handle truncated responses from max_tokens limit
 	content := response.Content
 	if !strings.HasSuffix(strings.TrimSpace(content), "### END") {
-		fmt.Printf("[SOC] Response appears truncated (missing ### END), attempting repair...\n")
+		// Response appears truncated (missing ### END), attempting repair...
 		content = strings.TrimSpace(content) + "\n### END"
 	}
 
@@ -236,13 +236,17 @@ func (a *BackendAgent) generateWithLLM(ctx context.Context, req *GenerationReque
 	}
 
 	// Convert SOC patch to generated files
-	fmt.Printf("[SOC] Patch valid=%v, files=%d, content=%d bytes\n",
-		patch.Valid, len(patch.Files), len(patch.Content))
+	// Patch validation: valid=%v, files=%d, content=%d bytes
+	// File list: %v
+	_ = patch.Valid
+	_ = len(patch.Files)
+	_ = len(patch.Content)
 	files, err := a.convertSOCPatchToFiles(patch, req.Spec)
 	if err != nil {
 		return fmt.Errorf("failed to parse generated code: %w", err)
 	}
-	fmt.Printf("[SOC] Converted to %d generated files\n", len(files))
+	// Converted to %d generated files
+	_ = len(files)
 
 	// Add generated files to result
 	result.Files = append(result.Files, files...)
@@ -293,6 +297,8 @@ func (a *BackendAgent) convertSOCPatchToFiles(patch *soc.Patch, spec *ir.IRSpec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract files from SOC patch: %w", err)
 	}
+	// Extracted files from diff content
+	_ = len(fileContents)
 
 	for _, filePath := range patch.Files {
 		content, exists := fileContents[filePath]
@@ -916,7 +922,7 @@ func (a *BackendAgent) filterProseFromSOC(content string) string {
 		   strings.Contains(lowerLine, "here's") ||
 		   strings.Contains(lowerLine, "sure, i") ||
 		   strings.Contains(lowerLine, "of course") {
-			fmt.Printf("[SOC] Filtering prose line: %s\n", line)
+			// Filtering prose line
 			continue
 		}
 
@@ -927,6 +933,8 @@ func (a *BackendAgent) filterProseFromSOC(content string) string {
 	}
 
 	result := strings.Join(filteredLines, "\n")
-	fmt.Printf("[SOC] Prose filtering: %d -> %d lines\n", len(lines), len(filteredLines))
+	// Prose filtering completed
+	_ = len(lines)
+	_ = len(filteredLines)
 	return result
 }
