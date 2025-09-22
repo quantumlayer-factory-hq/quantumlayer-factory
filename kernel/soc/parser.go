@@ -34,12 +34,13 @@ func NewParser(allowedPaths []string) *Parser {
 }
 
 var (
-	headerRegex    = regexp.MustCompile("^### FACTORY/1 PATCH\\s*$")
-	trailerRegex   = regexp.MustCompile("^### END\\s*$")
-	fileRegex      = regexp.MustCompile("^- file: ([a-zA-Z0-9/_.-]+)\\s*$")
-	diffStartRegex = regexp.MustCompile("^```diff\\s*$")
-	diffEndRegex   = regexp.MustCompile("^```\\s*$")
-	proseRegex     = regexp.MustCompile("(?i)(here's|let me|i'll|sure|of course|i can|based on|the code|this will|please|sorry)")
+	headerRegex      = regexp.MustCompile("^### FACTORY/1 PATCH\\s*$")
+	trailerRegex     = regexp.MustCompile("^### END\\s*$")
+	fileRegex        = regexp.MustCompile("^- file: ([a-zA-Z0-9/_.-]+)\\s*$")
+	diffStartRegex   = regexp.MustCompile("^```diff\\s*$")
+	diffEndRegex     = regexp.MustCompile("^```\\s*$")
+	diffHeaderRegex  = regexp.MustCompile("^(---|\\+\\+\\+)\\s+[ab]/.*")
+	proseRegex       = regexp.MustCompile("(?i)(here's|let me|i'll|sure|of course|i can|based on|the code|this will|please|sorry)")
 )
 
 func (p *Parser) Parse(input string) (*Patch, error) {
@@ -94,6 +95,10 @@ func (p *Parser) Parse(input string) (*Patch, error) {
 			} else if diffStartRegex.MatchString(line) {
 				state = "in_diff"
 				inDiff = true
+			} else if diffHeaderRegex.MatchString(line) {
+				// Handle raw unified diff format (Claude's natural output)
+				state = "in_raw_diff"
+				diffContent.WriteString(line + "\n")
 			} else if line == "" {
 				continue // skip empty lines
 			} else {
@@ -104,6 +109,13 @@ func (p *Parser) Parse(input string) (*Patch, error) {
 			if diffEndRegex.MatchString(line) {
 				state = "expecting_trailer"
 				inDiff = false
+			} else {
+				diffContent.WriteString(line + "\n")
+			}
+
+		case "in_raw_diff":
+			if trailerRegex.MatchString(line) {
+				state = "done"
 			} else {
 				diffContent.WriteString(line + "\n")
 			}

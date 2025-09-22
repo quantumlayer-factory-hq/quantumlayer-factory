@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"math"
 
+	"go.temporal.io/sdk/activity"
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/ir"
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/llm"
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/prompts"
+	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/soc"
 )
 
 // BackendAgent specializes in generating backend code
@@ -182,7 +185,12 @@ func (a *BackendAgent) generateWithLLM(ctx context.Context, req *GenerationReque
 	// Select model based on task complexity
 	model := a.selectModel(req.Spec)
 
-	// Call LLM to generate code
+	// Record heartbeat before LLM call
+	if activity.HasHeartbeatDetails(ctx) {
+		activity.RecordHeartbeat(ctx, "Calling LLM for backend code generation...")
+	}
+
+	// Call LLM with retry logic for rate limits
 	llmReq := &llm.GenerateRequest{
 		Prompt:       promptResult.Prompt,
 		Model:        model,
@@ -190,16 +198,40 @@ func (a *BackendAgent) generateWithLLM(ctx context.Context, req *GenerationReque
 		Temperature:  0.2,  // Low temperature for consistent code generation
 	}
 
-	response, err := a.llmClient.Generate(ctx, llmReq)
+	response, err := a.callLLMWithRetry(ctx, llmReq)
+
+	// Record heartbeat after LLM call
+	if activity.HasHeartbeatDetails(ctx) {
+		activity.RecordHeartbeat(ctx, "LLM generation completed, validating SOC format...")
+	}
 	if err != nil {
 		return fmt.Errorf("LLM generation failed: %w", err)
 	}
 
-	// Parse the LLM response to extract individual files
-	files, err := a.parseGeneratedCode(response.Content, req.Spec)
+	// Log LLM response summary for debugging
+	fmt.Printf("[LLM] Response received: %d chars, provider=%s, model=%s, tokens=%d/%d\n",
+		len(response.Content), response.Provider, response.Model,
+		response.Usage.PromptTokens, response.Usage.CompletionTokens)
+
+	// Temporarily log raw response for SOC debugging
+	fmt.Printf("=== RAW LLM RESPONSE START ===\n%s\n=== RAW LLM RESPONSE END ===\n", response.Content)
+	socParser := soc.NewParser(nil) // Allow all file paths
+	patch, err := socParser.Parse(response.Content)
+	if err != nil {
+		return fmt.Errorf("SOC validation failed: %w", err)
+	}
+	if !patch.Valid {
+		return fmt.Errorf("LLM generated invalid SOC format: %v", patch.Errors)
+	}
+
+	// Convert SOC patch to generated files
+	fmt.Printf("[SOC] Patch valid=%v, files=%d, content=%d bytes\n",
+		patch.Valid, len(patch.Files), len(patch.Content))
+	files, err := a.convertSOCPatchToFiles(patch, req.Spec)
 	if err != nil {
 		return fmt.Errorf("failed to parse generated code: %w", err)
 	}
+	fmt.Printf("[SOC] Converted to %d generated files\n", len(files))
 
 	// Add generated files to result
 	result.Files = append(result.Files, files...)
@@ -239,7 +271,69 @@ func (a *BackendAgent) selectModel(spec *ir.IRSpec) llm.Model {
 	}
 }
 
-// parseGeneratedCode parses LLM output into individual files
+// convertSOCPatchToFiles converts SOC patch to GeneratedFile format
+func (a *BackendAgent) convertSOCPatchToFiles(patch *soc.Patch, spec *ir.IRSpec) ([]GeneratedFile, error) {
+	files := []GeneratedFile{}
+
+	// Extract files from SOC patch content
+	// SOC patch.Content contains the unified diff
+	// We need to extract the actual file content from the diff
+	fileContents, err := a.extractFilesFromDiff(patch.Content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract files from SOC patch: %w", err)
+	}
+
+	for _, filePath := range patch.Files {
+		content, exists := fileContents[filePath]
+		if !exists {
+			continue
+		}
+
+		file := GeneratedFile{
+			Path:     filePath,
+			Type:     a.determineFileType(filePath),
+			Language: a.detectLanguage(filePath),
+			Template: "soc_llm_generated",
+			Content:  content,
+		}
+		files = append(files, file)
+	}
+
+	return files, nil
+}
+
+// extractFilesFromDiff extracts file contents from unified diff format
+func (a *BackendAgent) extractFilesFromDiff(diffContent string) (map[string]string, error) {
+	files := make(map[string]string)
+	currentFile := ""
+	var currentContent strings.Builder
+
+	lines := strings.Split(diffContent, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "--- a/") {
+			// Save previous file if exists
+			if currentFile != "" {
+				files[currentFile] = currentContent.String()
+			}
+			// Start new file
+			currentFile = strings.TrimPrefix(line, "--- a/")
+			currentContent.Reset()
+		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			// Add content line (remove + prefix)
+			currentContent.WriteString(strings.TrimPrefix(line, "+"))
+			currentContent.WriteString("\n")
+		}
+	}
+
+	// Save last file
+	if currentFile != "" {
+		files[currentFile] = currentContent.String()
+	}
+
+	return files, nil
+}
+
+// parseGeneratedCode parses LLM output into individual files (legacy fallback)
 func (a *BackendAgent) parseGeneratedCode(content string, spec *ir.IRSpec) ([]GeneratedFile, error) {
 	files := []GeneratedFile{}
 
@@ -314,6 +408,91 @@ func (a *BackendAgent) determineFileType(path string) string {
 		return "config"
 	}
 	return "source"
+}
+
+// detectLanguage detects programming language from file extension
+func (a *BackendAgent) detectLanguage(filePath string) string {
+	if strings.HasSuffix(filePath, ".py") {
+		return "python"
+	}
+	if strings.HasSuffix(filePath, ".go") {
+		return "go"
+	}
+	if strings.HasSuffix(filePath, ".js") || strings.HasSuffix(filePath, ".ts") {
+		return "javascript"
+	}
+	if strings.HasSuffix(filePath, ".sql") {
+		return "sql"
+	}
+	return "text"
+}
+
+// callLLMWithRetry calls LLM with exponential backoff retry logic
+func (a *BackendAgent) callLLMWithRetry(ctx context.Context, req *llm.GenerateRequest) (*llm.GenerateResponse, error) {
+	maxRetries := 3
+	baseDelay := time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Record heartbeat for retry attempts
+		if activity.HasHeartbeatDetails(ctx) {
+			if attempt == 0 {
+				activity.RecordHeartbeat(ctx, "Calling LLM...")
+			} else {
+				activity.RecordHeartbeat(ctx, fmt.Sprintf("Retrying LLM call (attempt %d/%d)...", attempt+1, maxRetries+1))
+			}
+		}
+
+		fmt.Printf("[LLM] Request: model=%s, prompt=%d chars, max_tokens=%d, temp=%.1f\n",
+			req.Model, len(req.Prompt), req.MaxTokens, req.Temperature)
+
+		response, err := a.llmClient.Generate(ctx, req)
+		if err == nil {
+			fmt.Printf("[LLM] Success: %d tokens response\n", response.Usage.CompletionTokens)
+			return response, nil
+		}
+
+		fmt.Printf("[LLM] Error: %v\n", err)
+
+		// Check if this is a rate limit error
+		if strings.Contains(err.Error(), "RATE_LIMIT") || strings.Contains(err.Error(), "rate limit") {
+			if attempt < maxRetries {
+				// Calculate exponential backoff delay
+				delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(attempt)))
+
+				// Sleep with periodic heartbeats to prevent timeout
+				if activity.HasHeartbeatDetails(ctx) {
+					activity.RecordHeartbeat(ctx, fmt.Sprintf("Rate limited, waiting %v before retry...", delay))
+				}
+
+				// Sleep in 5-second intervals with heartbeats
+				for elapsed := time.Duration(0); elapsed < delay; elapsed += 5*time.Second {
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-time.After(min(5*time.Second, delay-elapsed)):
+						if activity.HasHeartbeatDetails(ctx) && elapsed+5*time.Second < delay {
+							remaining := delay - elapsed - 5*time.Second
+							activity.RecordHeartbeat(ctx, fmt.Sprintf("Rate limited, %v remaining...", remaining))
+						}
+					}
+				}
+				continue
+			}
+		}
+
+		// For non-rate-limit errors or max retries exceeded, return the error
+		return nil, err
+	}
+
+	return nil, fmt.Errorf("max retries exceeded")
+}
+
+// min returns the smaller of two durations
+func min(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // getFileExtension returns the appropriate file extension for a language

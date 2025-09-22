@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/agents"
@@ -10,26 +11,14 @@ import (
 
 // createLLMEnabledFactory creates an agent factory with LLM support based on configuration
 func createLLMEnabledFactory(provider, model string) (*agents.AgentFactory, error) {
+	// Note: This function runs in activity context, not workflow context
+	// Logging provider and model for debugging
+	fmt.Printf("createLLMEnabledFactory called with provider=%s model=%s\n", provider, model)
+
 	// If no provider specified, return regular factory with default agents
 	if provider == "" || provider == "template" {
-		factory := agents.NewFactory()
-		// Register default agents
-		factory.RegisterAgent(agents.AgentTypeBackend, func() agents.Agent {
-			return agents.NewBackendAgent()
-		})
-		factory.RegisterAgent(agents.AgentTypeFrontend, func() agents.Agent {
-			return agents.NewFrontendAgent()
-		})
-		factory.RegisterAgent(agents.AgentTypeDatabase, func() agents.Agent {
-			return agents.NewDatabaseAgent()
-		})
-		factory.RegisterAgent(agents.AgentTypeAPI, func() agents.Agent {
-			return agents.NewAPIAgent()
-		})
-		factory.RegisterAgent(agents.AgentTypeTest, func() agents.Agent {
-			return agents.NewTestAgent()
-		})
-		return factory, nil
+		fmt.Println("Using template-based factory - no provider specified")
+		return createTemplateFactory(), nil
 	}
 
 	// Create LLM configuration from environment and parameters
@@ -56,20 +45,24 @@ func createLLMEnabledFactory(provider, model string) (*agents.AgentFactory, erro
 	var llmClient llm.Client
 	var err error
 
+	fmt.Printf("Creating LLM client for provider: %s\n", provider)
+
 	switch provider {
-	case "aws", "bedrock":
+	case "aws", "bedrock", "aws-bedrock":
 		llmClient, err = clientFactory.CreateClient(llm.ProviderBedrock)
-	case "azure":
+	case "azure", "azure-openai":
 		llmClient, err = clientFactory.CreateClient(llm.ProviderAzure)
 	default:
-		// Return regular factory for unsupported providers
-		return agents.NewFactory(), nil
+		fmt.Printf("Unsupported provider %s, falling back to template factory\n", provider)
+		return createTemplateFactory(), nil
 	}
 
 	if err != nil {
-		// Fallback to regular factory if LLM client creation fails
-		return agents.NewFactory(), nil
+		fmt.Printf("LLM client creation failed: %v, falling back to template factory\n", err)
+		return createTemplateFactory(), nil
 	}
+
+	fmt.Printf("Successfully created LLM client for provider: %s\n", provider)
 
 	// Create prompt composer with default config
 	promptComposer := prompts.NewPromptComposer(prompts.ComposerConfig{
@@ -81,6 +74,29 @@ func createLLMEnabledFactory(provider, model string) (*agents.AgentFactory, erro
 
 	// Create factory with LLM support
 	factory := agents.NewFactoryWithLLM(llmClient, promptComposer)
+	fmt.Println("Created LLM-enabled factory successfully")
 
 	return factory, nil
+}
+
+// createTemplateFactory creates a template-based agent factory
+func createTemplateFactory() *agents.AgentFactory {
+	factory := agents.NewFactory()
+	// Register default agents
+	factory.RegisterAgent(agents.AgentTypeBackend, func() agents.Agent {
+		return agents.NewBackendAgent()
+	})
+	factory.RegisterAgent(agents.AgentTypeFrontend, func() agents.Agent {
+		return agents.NewFrontendAgent()
+	})
+	factory.RegisterAgent(agents.AgentTypeDatabase, func() agents.Agent {
+		return agents.NewDatabaseAgent()
+	})
+	factory.RegisterAgent(agents.AgentTypeAPI, func() agents.Agent {
+		return agents.NewAPIAgent()
+	})
+	factory.RegisterAgent(agents.AgentTypeTest, func() agents.Agent {
+		return agents.NewTestAgent()
+	})
+	return factory
 }

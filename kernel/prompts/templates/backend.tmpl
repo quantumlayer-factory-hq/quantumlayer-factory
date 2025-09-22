@@ -15,8 +15,8 @@ You are a specialized backend code generation agent. Your expertise lies in crea
 - Framework: {{.Stack.Backend.Framework}}
 {{- end}}
 - Database: {{.Stack.Database.Type}}
-{{- if .Stack.Database.Host}}
-- Database Host: {{.Stack.Database.Host}}
+{{- if .Stack.Database.Config.host}}
+- Database Host: {{.Stack.Database.Config.host}}
 {{- end}}
 
 **Features to Implement:**
@@ -129,13 +129,64 @@ Follow these coding standards:
 
 ## Output Format
 
-Provide the complete backend implementation with:
-- Clear file structure and organization
-- Comprehensive code comments
-- Example configuration files
-- Database migration scripts
-- Unit test examples
-- API documentation snippets
-- Deployment configuration (Dockerfile, docker-compose.yml)
+**CRITICAL: You MUST respond using EXACTLY the FACTORY SOC (Strict Output Contract) format. This is MANDATORY - any deviation will cause system failure.**
 
-Generate production-ready code that follows industry best practices and is ready for deployment.
+**IMPORTANT: Your FIRST line must be EXACTLY "### FACTORY/1 PATCH" with no preceding text, no explanations, no greetings, no acknowledgments.**
+
+**FORBIDDEN: Do not include any text before the SOC block. Do not start with phrases like "I'll create", "Here's", "Let me", or any explanatory text.**
+
+Your ENTIRE response must follow this EXACT structure:
+
+```
+### FACTORY/1 PATCH
+- file: main.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
+- file: models.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
+{{- if eq .Stack.Backend.Language "python"}}
+- file: requirements.txt
+{{- else if eq .Stack.Backend.Language "javascript"}}
+- file: package.json
+{{- else if eq .Stack.Backend.Language "go"}}
+- file: go.mod
+{{- end}}
+```diff
+--- a/main.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
++++ b/main.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
+@@ -0,0 +1,X @@
++[COMPLETE RUNNABLE CODE HERE]
+
+--- a/models.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
++++ b/models.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
+@@ -0,0 +1,Y @@
++[COMPLETE RUNNABLE CODE HERE]
+
+{{- if eq .Stack.Backend.Language "python"}}
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -0,0 +1,Z @@
++[COMPLETE DEPENDENCIES HERE]
+{{- else if eq .Stack.Backend.Language "javascript"}}
+--- a/package.json
++++ b/package.json
+@@ -0,0 +1,Z @@
++[COMPLETE PACKAGE CONFIG HERE]
+{{- else if eq .Stack.Backend.Language "go"}}
+--- a/go.mod
++++ b/go.mod
+@@ -0,0 +1,Z @@
++[COMPLETE MODULE CONFIG HERE]
+{{- end}}
+```
+### END
+```
+
+**STRICT RULES - FAILURE TO FOLLOW WILL CAUSE SYSTEM ERROR:**
+1. NO text before "### FACTORY/1 PATCH"
+2. NO text after "### END"
+3. NO explanations, comments, or prose outside the SOC structure
+4. ALL code must be complete and immediately runnable
+5. Replace X, Y, Z with actual line counts
+6. Each file must be a valid unified diff patch
+7. Include ALL necessary files for a complete working backend
+8. Use proper file extensions based on the language
+9. EXACTLY match the header format "### FACTORY/1 PATCH"
+10. EXACTLY match the footer format "### END"

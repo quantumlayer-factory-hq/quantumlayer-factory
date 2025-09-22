@@ -46,8 +46,8 @@ func NewGenerateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&flagAsync, "async", false, "Return immediately with WorkflowID; use 'qlf status' to follow")
 	cmd.Flags().StringSliceVar(&flagOverlays, "overlay", []string{}, "Apply specific overlays (e.g., --overlay fintech,pci)")
 	cmd.Flags().BoolVar(&flagSuggestOverlay, "suggest-overlays", false, "Show suggested overlays without generating code")
-	cmd.Flags().StringVar(&flagProvider, "provider", "", "LLM provider (aws, azure, auto)")
-	cmd.Flags().StringVar(&flagModel, "model", "", "Specific model to use (claude-3-sonnet, gpt-4, etc.)")
+	cmd.Flags().StringVar(&flagProvider, "provider", "", "LLM provider (bedrock, azure, auto) - defaults to QLF_LLM_PROVIDER env var")
+	cmd.Flags().StringVar(&flagModel, "model", "", "Specific model to use (claude-sonnet, gpt-4, etc.) - defaults to QLF_LLM_MODEL env var")
 	cmd.Flags().BoolVar(&flagCompare, "compare", false, "Generate with multiple providers for comparison")
 	cmd.Flags().StringVar(&flagDeploy, "deploy", "", "Deploy type: 'preview' for ephemeral preview deployment")
 	cmd.Flags().StringVar(&flagTTL, "ttl", "24h", "Time-to-live for preview deployment (e.g., 1h, 24h, 3d)")
@@ -83,6 +83,14 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		flagOutput = cfg.OutputDir
 	}
 	flagVerbose = flagVerbose || cfg.Verbose
+
+	// Apply environment variable defaults for LLM configuration
+	if flagProvider == "" {
+		flagProvider = os.Getenv("QLF_LLM_PROVIDER")
+	}
+	if flagModel == "" {
+		flagModel = os.Getenv("QLF_LLM_MODEL")
+	}
 
 	c, err := NewTemporalClient(cfg.Temporal.Address, cfg.Temporal.Namespace)
 	if err != nil {

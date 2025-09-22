@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.temporal.io/sdk/activity"
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/agents"
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/ir"
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/verifier"
@@ -144,7 +145,9 @@ func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []str
 				},
 			}
 
-			output, err := backendAgent.Generate(context.Background(), request)
+			// Record heartbeat before LLM call
+			activity.RecordHeartbeat(ctx, "Generating backend code with agents...")
+			output, err := backendAgent.Generate(ctx, request)
 			if err != nil {
 				result.Success = false
 				result.Errors = append(result.Errors, fmt.Sprintf("Backend generation failed: %v", err))
@@ -189,7 +192,9 @@ func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []str
 				},
 			}
 
-			output, err := frontendAgent.Generate(context.Background(), request)
+			// Record heartbeat before LLM call
+			activity.RecordHeartbeat(ctx, "Generating frontend code...")
+			output, err := frontendAgent.Generate(ctx, request)
 			if err != nil {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("Frontend generation failed: %v", err))
 			} else if !output.Success {
@@ -231,7 +236,9 @@ func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []str
 				},
 			}
 
-			output, err := databaseAgent.Generate(context.Background(), request)
+			// Record heartbeat before LLM call
+			activity.RecordHeartbeat(ctx, "Generating database code...")
+			output, err := databaseAgent.Generate(ctx, request)
 			if err != nil {
 				result.Warnings = append(result.Warnings, fmt.Sprintf("Database generation failed: %v", err))
 			} else if !output.Success {

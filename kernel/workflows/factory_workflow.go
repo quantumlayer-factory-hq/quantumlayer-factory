@@ -65,7 +65,7 @@ func FactoryWorkflow(ctx workflow.Context, input FactoryWorkflowInput) (*Factory
 	// Set workflow timeout
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
-		HeartbeatTimeout:    30 * time.Second,
+		HeartbeatTimeout:    2 * time.Minute, // Increased for LLM calls
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
