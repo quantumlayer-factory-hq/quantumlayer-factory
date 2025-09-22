@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/testsuite"
 
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/ir"
 )
@@ -68,7 +69,11 @@ func TestValidateActivityWithErrors(t *testing.T) {
 }
 
 func TestGenerateCodeActivityDirectly(t *testing.T) {
-	ctx := context.Background()
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+
+	// Register the activity with the test environment
+	env.RegisterActivity(GenerateCodeActivity)
 
 	// Test code generation
 	irSpec := &ir.IRSpec{
@@ -84,15 +89,18 @@ func TestGenerateCodeActivityDirectly(t *testing.T) {
 		},
 	}
 
-	result, err := GenerateCodeActivity(ctx, irSpec, []string{}, map[string]interface{}{}, "template", "")
-
+	// Execute the activity in the test environment
+	val, err := env.ExecuteActivity(GenerateCodeActivity, irSpec, []string{}, map[string]interface{}{}, "template", "")
 	require.NoError(t, err)
+
+	var result CodeGenerationResult
+	err = val.Get(&result)
+	require.NoError(t, err)
+
 	if !result.Success {
 		t.Logf("Generation failed. Errors: %v, Warnings: %v", result.Errors, result.Warnings)
 	}
 	assert.True(t, result.Success, "Generation should succeed")
-	// Backend agent will generate code when fully implemented
-	// For now we just verify the activity completes successfully
 }
 
 func TestVerifyCodeActivityDirectly(t *testing.T) {
