@@ -109,6 +109,10 @@ func (p *Parser) Parse(input string) (*Patch, error) {
 			if diffEndRegex.MatchString(line) {
 				state = "expecting_trailer"
 				inDiff = false
+			} else if trailerRegex.MatchString(line) {
+				// Handle case where ### END appears directly in diff block
+				state = "done"
+				inDiff = false
 			} else {
 				diffContent.WriteString(line + "\n")
 			}

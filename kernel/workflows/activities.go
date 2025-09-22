@@ -2,8 +2,12 @@ package workflows
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"go.temporal.io/sdk/activity"
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/agents"
@@ -373,20 +377,61 @@ func PackageArtifactsActivity(ctx context.Context, generatedCode map[string]stri
 		projectDir := fmt.Sprintf("%s/%s", outputDir, projectID)
 		result.OutputPath = projectDir
 
-		// In a full implementation, this would actually write files
-		// For now, just create artifact path references
-		for filename := range generatedCode {
-			artifactPath := fmt.Sprintf("%s/%s", projectDir, filename)
-			result.ArtifactPaths = append(result.ArtifactPaths, artifactPath)
+		// Create project directory
+		err := os.MkdirAll(projectDir, 0755)
+		if err != nil {
+			return PackageResult{
+				Success: false,
+			}, fmt.Errorf("failed to create project directory: %w", err)
 		}
 
-		// Add IR spec as artifact
-		irSpecPath := fmt.Sprintf("%s/ir_spec.json", projectDir)
-		result.ArtifactPaths = append(result.ArtifactPaths, irSpecPath)
+		// Write each generated file
+		for filename, content := range generatedCode {
+			filePath := filepath.Join(projectDir, filename)
+			dir := filepath.Dir(filePath)
 
-		// Add README
-		readmePath := fmt.Sprintf("%s/README.md", projectDir)
-		result.ArtifactPaths = append(result.ArtifactPaths, readmePath)
+			// Create subdirectories if needed
+			if dir != projectDir {
+				err := os.MkdirAll(dir, 0755)
+				if err != nil {
+					fmt.Printf("Warning: Failed to create directory %s: %v\n", dir, err)
+					continue
+				}
+			}
+
+			// Write file
+			err := os.WriteFile(filePath, []byte(content), 0644)
+			if err != nil {
+				fmt.Printf("Warning: Failed to write file %s: %v\n", filename, err)
+				continue
+			}
+
+			result.ArtifactPaths = append(result.ArtifactPaths, filePath)
+		}
+
+		// Write IR spec as JSON
+		irSpecPath := filepath.Join(projectDir, "ir_spec.json")
+		irSpecJSON, err := json.MarshalIndent(irSpec, "", "  ")
+		if err != nil {
+			fmt.Printf("Warning: Failed to marshal IR spec: %v\n", err)
+		} else {
+			err = os.WriteFile(irSpecPath, irSpecJSON, 0644)
+			if err != nil {
+				fmt.Printf("Warning: Failed to write IR spec: %v\n", err)
+			} else {
+				result.ArtifactPaths = append(result.ArtifactPaths, irSpecPath)
+			}
+		}
+
+		// Generate and write README
+		readmePath := filepath.Join(projectDir, "README.md")
+		readmeContent := generateReadme(irSpec, generatedCode)
+		err = os.WriteFile(readmePath, []byte(readmeContent), 0644)
+		if err != nil {
+			fmt.Printf("Warning: Failed to write README: %v\n", err)
+		} else {
+			result.ArtifactPaths = append(result.ArtifactPaths, readmePath)
+		}
 	}
 
 	return result, nil
@@ -444,4 +489,115 @@ func (s *stubRunner) Run(ctx context.Context, artifacts []verifier.Artifact, con
 
 func (s *stubRunner) GetDefaultConfig() map[string]interface{} {
 	return make(map[string]interface{})
+}
+
+// generateReadme creates a comprehensive README.md for the generated project
+func generateReadme(irSpec *ir.IRSpec, generatedCode map[string]string) string {
+	var readme strings.Builder
+
+	// Project header
+	readme.WriteString(fmt.Sprintf("# %s\n\n", irSpec.App.Name))
+
+	if irSpec.App.Description != "" {
+		readme.WriteString(fmt.Sprintf("%s\n\n", irSpec.App.Description))
+	}
+
+	// Generated info
+	readme.WriteString("## 🤖 Generated Project\n\n")
+	readme.WriteString(fmt.Sprintf("- **Generated**: %s\n", time.Now().Format("2006-01-02 15:04:05")))
+	readme.WriteString(fmt.Sprintf("- **Type**: %s\n", irSpec.App.Type))
+	readme.WriteString(fmt.Sprintf("- **Domain**: %s\n", irSpec.App.Domain))
+	if irSpec.App.Stack.Backend.Language != "" {
+		readme.WriteString(fmt.Sprintf("- **Language**: %s\n", irSpec.App.Stack.Backend.Language))
+	}
+	if irSpec.App.Stack.Backend.Framework != "" {
+		readme.WriteString(fmt.Sprintf("- **Framework**: %s\n", irSpec.App.Stack.Backend.Framework))
+	}
+	readme.WriteString("\\n")
+
+	// Files structure
+	readme.WriteString("## 📁 Project Structure\\n\\n")
+	readme.WriteString("```\\n")
+	for filename := range generatedCode {
+		readme.WriteString(fmt.Sprintf("%s\\n", filename))
+	}
+	readme.WriteString("ir_spec.json\\n")
+	readme.WriteString("README.md\\n")
+	readme.WriteString("```\\n\\n")
+
+	// Features
+	if len(irSpec.App.Features) > 0 {
+		readme.WriteString("## ✨ Features\\n\\n")
+		for _, feature := range irSpec.App.Features {
+			readme.WriteString(fmt.Sprintf("- **%s**: %s\\n", feature.Name, feature.Description))
+		}
+		readme.WriteString("\\n")
+	}
+
+	// Entities
+	if len(irSpec.Data.Entities) > 0 {
+		readme.WriteString("## 📊 Data Models\\n\\n")
+		for _, entity := range irSpec.Data.Entities {
+			readme.WriteString(fmt.Sprintf("### %s\\n", entity.Name))
+			if entity.Description != "" {
+				readme.WriteString(fmt.Sprintf("%s\\n\\n", entity.Description))
+			}
+			if len(entity.Fields) > 0 {
+				readme.WriteString("**Fields:**\\n")
+				for _, field := range entity.Fields {
+					readme.WriteString(fmt.Sprintf("- `%s` (%s)", field.Name, field.Type))
+					if field.Required {
+						readme.WriteString(" *required*")
+					}
+					if field.Description != "" {
+						readme.WriteString(fmt.Sprintf(" - %s", field.Description))
+					}
+					readme.WriteString("\\n")
+				}
+			}
+			readme.WriteString("\\n")
+		}
+	}
+
+	// Quick start
+	readme.WriteString("## 🚀 Quick Start\\n\\n")
+
+	// Determine setup instructions based on language
+	if irSpec.App.Stack.Backend.Language == "python" {
+		readme.WriteString("```bash\\n")
+		readme.WriteString("# Install dependencies\\n")
+		readme.WriteString("pip install -r requirements.txt\\n\\n")
+		readme.WriteString("# Run the application\\n")
+		readme.WriteString("python main.py\\n")
+		readme.WriteString("```\\n\\n")
+	} else if irSpec.App.Stack.Backend.Language == "go" {
+		readme.WriteString("```bash\\n")
+		readme.WriteString("# Install dependencies\\n")
+		readme.WriteString("go mod tidy\\n\\n")
+		readme.WriteString("# Run the application\\n")
+		readme.WriteString("go run main.go\\n")
+		readme.WriteString("```\\n\\n")
+	} else if irSpec.App.Stack.Backend.Language == "javascript" {
+		readme.WriteString("```bash\\n")
+		readme.WriteString("# Install dependencies\\n")
+		readme.WriteString("npm install\\n\\n")
+		readme.WriteString("# Run the application\\n")
+		readme.WriteString("npm start\\n")
+		readme.WriteString("```\\n\\n")
+	}
+
+	// API endpoints (if it's an API project)
+	if irSpec.App.Type == "api" && len(irSpec.API.Endpoints) > 0 {
+		readme.WriteString("## 🔗 API Endpoints\\n\\n")
+		for _, endpoint := range irSpec.API.Endpoints {
+			readme.WriteString(fmt.Sprintf("- `%s %s` - %s\\n", endpoint.Method, endpoint.Path, endpoint.Description))
+		}
+		readme.WriteString("\\n")
+	}
+
+	// Footer
+	readme.WriteString("---\\n\\n")
+	readme.WriteString("*Generated by [QuantumLayer Factory](https://github.com/quantumlayer-factory-hq/quantumlayer-factory)*\\n")
+
+	return readme.String()
 }
