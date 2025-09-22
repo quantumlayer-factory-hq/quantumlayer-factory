@@ -215,8 +215,19 @@ func (a *BackendAgent) generateWithLLM(ctx context.Context, req *GenerationReque
 
 	// Temporarily log raw response for SOC debugging
 	fmt.Printf("=== RAW LLM RESPONSE START ===\n%s\n=== RAW LLM RESPONSE END ===\n", response.Content)
+
+	// Handle truncated responses from max_tokens limit
+	content := response.Content
+	if !strings.HasSuffix(strings.TrimSpace(content), "### END") {
+		fmt.Printf("[SOC] Response appears truncated (missing ### END), attempting repair...\n")
+		content = strings.TrimSpace(content) + "\n### END"
+	}
+
+	// Filter out prose contamination before SOC validation
+	content = a.filterProseFromSOC(content)
+
 	socParser := soc.NewParser(nil) // Allow all file paths
-	patch, err := socParser.Parse(response.Content)
+	patch, err := socParser.Parse(content)
 	if err != nil {
 		return fmt.Errorf("SOC validation failed: %w", err)
 	}
@@ -841,4 +852,81 @@ func (a *BackendAgent) validateGoFile(file GeneratedFile, validation *Validation
 		return fmt.Errorf("Go file %s missing package declaration", file.Path)
 	}
 	return nil
+}
+
+// filterProseFromSOC removes conversational prose from LLM responses before SOC validation
+func (a *BackendAgent) filterProseFromSOC(content string) string {
+	lines := strings.Split(content, "\n")
+	var filteredLines []string
+	inDiff := false
+	inRawDiff := false
+	fileListDone := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Track if we're inside a diff block (```diff format)
+		if strings.HasPrefix(trimmed, "```diff") {
+			inDiff = true
+			fileListDone = true
+			filteredLines = append(filteredLines, line)
+			continue
+		}
+		if strings.HasPrefix(trimmed, "```") && inDiff {
+			inDiff = false
+			filteredLines = append(filteredLines, line)
+			continue
+		}
+
+		// Track if we're in raw diff format (--- a/ format)
+		if strings.HasPrefix(trimmed, "--- a/") || strings.HasPrefix(trimmed, "+++ b/") {
+			inRawDiff = true
+			fileListDone = true
+			filteredLines = append(filteredLines, line)
+			continue
+		}
+
+		// Keep SOC structure lines
+		if trimmed == "### FACTORY/1 PATCH" ||
+		   trimmed == "### END" ||
+		   strings.HasPrefix(trimmed, "- file:") {
+			filteredLines = append(filteredLines, line)
+			continue
+		}
+
+		// Keep diff content when inside any diff block
+		if inDiff || inRawDiff {
+			filteredLines = append(filteredLines, line)
+			continue
+		}
+
+		// After file list is done, skip empty lines until we hit diff content
+		if fileListDone && trimmed == "" {
+			continue
+		}
+
+		// Filter out conversational lines outside diff blocks
+		lowerLine := strings.ToLower(trimmed)
+		if strings.HasPrefix(lowerLine, "human:") ||
+		   strings.HasPrefix(lowerLine, "assistant:") ||
+		   strings.Contains(lowerLine, "thank you") ||
+		   strings.Contains(lowerLine, "you're welcome") ||
+		   strings.Contains(lowerLine, "i'll help") ||
+		   strings.Contains(lowerLine, "let me") ||
+		   strings.Contains(lowerLine, "here's") ||
+		   strings.Contains(lowerLine, "sure, i") ||
+		   strings.Contains(lowerLine, "of course") {
+			fmt.Printf("[SOC] Filtering prose line: %s\n", line)
+			continue
+		}
+
+		// Keep other content (including empty lines before file list completion)
+		if !fileListDone || trimmed != "" {
+			filteredLines = append(filteredLines, line)
+		}
+	}
+
+	result := strings.Join(filteredLines, "\n")
+	fmt.Printf("[SOC] Prose filtering: %d -> %d lines\n", len(lines), len(filteredLines))
+	return result
 }
