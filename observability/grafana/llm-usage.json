@@ -1,0 +1,335 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "QuantumLayer Factory - LLM Usage & Costs",
+    "tags": ["quantumlayer", "llm", "costs"],
+    "style": "dark",
+    "timezone": "browser",
+    "editable": true,
+    "graphTooltip": 0,
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total LLM Cost",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "qlf_llm_cost_usd",
+            "legendFormat": "Current Cost"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 50},
+                {"color": "red", "value": 100}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Request Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(qlf_llm_requests_total[5m])",
+            "legendFormat": "Requests/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Cache Hit Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(qlf_llm_cache_hits_total[5m]) / rate(qlf_llm_requests_total[5m]) * 100",
+            "legendFormat": "Cache Hit %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 60},
+                {"color": "green", "value": 80}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Token Usage Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(qlf_llm_tokens_total[5m])",
+            "legendFormat": "Tokens/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "LLM Latency by Provider",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(qlf_llm_latency_seconds_bucket[5m])) by (provider)",
+            "legendFormat": "{{provider}} p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(qlf_llm_latency_seconds_bucket[5m])) by (provider)",
+            "legendFormat": "{{provider}} p95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(qlf_llm_latency_seconds_bucket[5m])) by (provider)",
+            "legendFormat": "{{provider}} p99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Requests by Provider",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(qlf_llm_requests_total[5m]) by (provider)",
+            "legendFormat": "{{provider}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "Cost Breakdown by Provider",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (provider) (qlf_llm_cost_usd)",
+            "legendFormat": "{{provider}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 16}
+      },
+      {
+        "id": 8,
+        "title": "Token Usage by Model",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (model) (rate(qlf_llm_tokens_total[1h]))",
+            "legendFormat": "{{model}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 16}
+      },
+      {
+        "id": 9,
+        "title": "LLM Error Rate",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(qlf_llm_requests_total{result=\"error\"}[5m]) by (provider, error_type)",
+            "legendFormat": "{{provider}}: {{error_type}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 16}
+      },
+      {
+        "id": 10,
+        "title": "Cost Over Time",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "increase(qlf_llm_cost_usd[1h]) by (provider)",
+            "legendFormat": "{{provider}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 11,
+        "title": "Model Performance Comparison",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "sum by (provider, model) (rate(qlf_llm_requests_total[1h]))",
+            "legendFormat": "{{provider}}/{{model}}",
+            "format": "table"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(qlf_llm_latency_seconds_bucket[1h])) by (provider, model)",
+            "legendFormat": "{{provider}}/{{model}} p95 latency",
+            "format": "table"
+          },
+          {
+            "expr": "sum by (provider, model) (qlf_llm_cost_usd)",
+            "legendFormat": "{{provider}}/{{model}} cost",
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "Cost"},
+              "properties": [{"id": "unit", "value": "currencyUSD"}]
+            },
+            {
+              "matcher": {"id": "byName", "options": "Latency"},
+              "properties": [{"id": "unit", "value": "s"}]
+            }
+          ]
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 12,
+        "title": "Cache Performance",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(qlf_llm_cache_hits_total[5m]) by (provider)",
+            "legendFormat": "{{provider}} hits"
+          },
+          {
+            "expr": "rate(qlf_llm_requests_total[5m]) - rate(qlf_llm_cache_hits_total[5m]) by (provider)",
+            "legendFormat": "{{provider}} misses"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32}
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "provider",
+          "type": "query",
+          "query": "label_values(qlf_llm_requests_total, provider)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        },
+        {
+          "name": "model",
+          "type": "query",
+          "query": "label_values(qlf_llm_requests_total{provider=~\"$provider\"}, model)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Budget Alerts",
+          "datasource": "Prometheus",
+          "expr": "changes(qlf_errors_total{component=\"llm_monitor\", error_type=~\"budget.*\"}[1m])",
+          "titleFormat": "Budget Alert",
+          "textFormat": "{{error_type}}: Cost exceeded threshold"
+        }
+      ]
+    }
+  }
+}

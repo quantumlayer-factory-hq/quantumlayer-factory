@@ -1,0 +1,496 @@
+# QuantumLayer Factory - Alerting Rules
+groups:
+  - name: qlf_system_alerts
+    rules:
+      # High-level system health alerts
+      - alert: QLFHighErrorRate
+        expr: rate(qlf_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: quantumlayer-factory
+        annotations:
+          summary: "High error rate detected in QLF system"
+          description: "Error rate is {{ $value }} errors/sec for {{ $labels.component }}"
+
+      - alert: QLFSystemDown
+        expr: up{job=~"qlf-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: quantumlayer-factory
+        annotations:
+          summary: "QLF service is down"
+          description: "Service {{ $labels.job }} has been down for more than 1 minute"
+
+      # Generation pipeline alerts
+      - alert: QLFGenerationFailureRate
+        expr: rate(qlf_generations_total{result="error"}[5m]) / rate(qlf_generations_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          component: generation
+        annotations:
+          summary: "High generation failure rate"
+          description: "Generation failure rate is {{ $value | humanizePercentage }} for {{ $labels.language }}/{{ $labels.framework }}"
+
+      - alert: QLFSlowGeneration
+        expr: histogram_quantile(0.95, rate(qlf_generation_duration_seconds_bucket[5m])) > 300
+        for: 5m
+        labels:
+          severity: warning
+          component: generation
+        annotations:
+          summary: "Slow application generation"
+          description: "95th percentile generation time is {{ $value }}s"
+
+  - name: qlf_llm_alerts
+    rules:
+      # LLM cost management alerts
+      - alert: QLFLLMBudgetWarning
+        expr: qlf_llm_cost_usd > 80
+        for: 1m
+        labels:
+          severity: warning
+          component: llm
+        annotations:
+          summary: "LLM budget approaching limit"
+          description: "Current LLM cost is ${{ $value }}, approaching monthly budget limit"
+
+      - alert: QLFLLMBudgetExceeded
+        expr: qlf_llm_cost_usd > 100
+        for: 0m
+        labels:
+          severity: critical
+          component: llm
+        annotations:
+          summary: "LLM budget exceeded"
+          description: "Current LLM cost is ${{ $value }}, exceeding monthly budget of $100"
+
+      # LLM performance alerts
+      - alert: QLFLLMHighLatency
+        expr: histogram_quantile(0.95, rate(qlf_llm_latency_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: llm
+        annotations:
+          summary: "High LLM latency detected"
+          description: "95th percentile LLM latency is {{ $value }}s for {{ $labels.provider }}/{{ $labels.model }}"
+
+      - alert: QLFLLMHighErrorRate
+        expr: rate(qlf_llm_requests_total{result="error"}[5m]) / rate(qlf_llm_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          component: llm
+        annotations:
+          summary: "High LLM error rate"
+          description: "LLM error rate is {{ $value | humanizePercentage }} for {{ $labels.provider }}"
+
+      - alert: QLFLLMProviderDown
+        expr: rate(qlf_llm_requests_total{result="success"}[5m]) == 0 and rate(qlf_llm_requests_total[5m]) > 0
+        for: 3m
+        labels:
+          severity: critical
+          component: llm
+        annotations:
+          summary: "LLM provider appears to be down"
+          description: "No successful LLM requests for {{ $labels.provider }} in the last 3 minutes"
+
+      # Cache performance alerts
+      - alert: QLFLowCacheHitRate
+        expr: rate(qlf_llm_cache_hits_total[5m]) / rate(qlf_llm_requests_total[5m]) < 0.3
+        for: 10m
+        labels:
+          severity: info
+          component: llm_cache
+        annotations:
+          summary: "Low LLM cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} for {{ $labels.provider }}"
+
+  - name: qlf_verification_alerts
+    rules:
+      # Verification gate alerts
+      - alert: QLFVerificationFailureRate
+        expr: rate(qlf_verifications_total{result="error"}[5m]) / rate(qlf_verifications_total[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: verification
+        annotations:
+          summary: "High verification failure rate"
+          description: "Verification failure rate is {{ $value | humanizePercentage }} for {{ $labels.gate_type }}"
+
+      - alert: QLFQualityScoreDropped
+        expr: avg(qlf_quality_score) < 7.0
+        for: 10m
+        labels:
+          severity: warning
+          component: verification
+        annotations:
+          summary: "Code quality score dropped"
+          description: "Average quality score is {{ $value }}, below threshold of 7.0"
+
+      - alert: QLFHighRepairRate
+        expr: rate(qlf_repair_attempts_total[5m]) / rate(qlf_verifications_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: info
+          component: verification
+        annotations:
+          summary: "High code repair rate"
+          description: "{{ $value | humanizePercentage }} of verifications require repair"
+
+  - name: qlf_packaging_alerts
+    rules:
+      # Package creation alerts
+      - alert: QLFPackagingFailureRate
+        expr: rate(qlf_packages_created_total{result="error"}[5m]) / rate(qlf_packages_created_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          component: packaging
+        annotations:
+          summary: "High packaging failure rate"
+          description: "Packaging failure rate is {{ $value | humanizePercentage }}"
+
+      - alert: QLFSlowPackaging
+        expr: histogram_quantile(0.95, rate(qlf_package_build_duration_seconds_bucket[5m])) > 60
+        for: 5m
+        labels:
+          severity: warning
+          component: packaging
+        annotations:
+          summary: "Slow package creation"
+          description: "95th percentile package build time is {{ $value }}s"
+
+      - alert: QLFHighVulnerabilityCount
+        expr: avg(qlf_package_size_bytes{vulnerabilities_count!=""}) > 10
+        for: 0m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "High vulnerability count in packages"
+          description: "Average vulnerability count is {{ $value }} per package"
+
+      # SBOM generation alerts
+      - alert: QLFSBOMGenerationSlow
+        expr: histogram_quantile(0.95, rate(qlf_sbom_generation_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: info
+          component: sbom
+        annotations:
+          summary: "Slow SBOM generation"
+          description: "95th percentile SBOM generation time is {{ $value }}s"
+
+  - name: qlf_deployment_alerts
+    rules:
+      # Deployment alerts
+      - alert: QLFDeploymentFailureRate
+        expr: rate(qlf_deployments_total{result="error"}[5m]) / rate(qlf_deployments_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          component: deployment
+        annotations:
+          summary: "High deployment failure rate"
+          description: "Deployment failure rate is {{ $value | humanizePercentage }}"
+
+      - alert: QLFSlowDeployment
+        expr: histogram_quantile(0.95, rate(qlf_deployment_duration_seconds_bucket[5m])) > 300
+        for: 5m
+        labels:
+          severity: warning
+          component: deployment
+        annotations:
+          summary: "Slow application deployment"
+          description: "95th percentile deployment time is {{ $value }}s"
+
+      - alert: QLFTooManyPreviewEnvironments
+        expr: qlf_preview_environments_active > 50
+        for: 5m
+        labels:
+          severity: warning
+          component: deployment
+        annotations:
+          summary: "Too many active preview environments"
+          description: "{{ $value }} preview environments are active, consider cleanup"
+
+      # Health check alerts
+      - alert: QLFUnhealthyService
+        expr: qlf_health_checks_total{status="unhealthy"} > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: health
+        annotations:
+          summary: "Unhealthy service detected"
+          description: "Service {{ $labels.service }} is reporting unhealthy status"
+
+  - name: qlf_infrastructure_alerts
+    rules:
+      # Database alerts
+      - alert: QLFDatabaseConnectionHigh
+        expr: pg_stat_activity_count > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "High database connection count"
+          description: "PostgreSQL has {{ $value }} active connections"
+
+      - alert: QLFDatabaseDown
+        expr: up{job="postgresql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL database has been unreachable for 1 minute"
+
+      # Redis alerts
+      - alert: QLFRedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: QLFRedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis cache is down"
+          description: "Redis has been unreachable for 1 minute"
+
+      # Temporal alerts
+      - alert: QLFTemporalDown
+        expr: up{job="temporal"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: workflow
+        annotations:
+          summary: "Temporal service is down"
+          description: "Temporal workflow service has been unreachable for 1 minute"
+
+      - alert: QLFHighWorkflowFailureRate
+        expr: rate(temporal_workflow_failed_total[5m]) / rate(temporal_workflow_started_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          component: workflow
+        annotations:
+          summary: "High workflow failure rate"
+          description: "Workflow failure rate is {{ $value | humanizePercentage }}"
+
+  - name: qlf_performance_alerts
+    rules:
+      # System performance alerts
+      - alert: QLFHighCPUUsage
+        expr: rate(process_cpu_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% for {{ $labels.job }}"
+
+      - alert: QLFHighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 > 1024
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}MB for {{ $labels.job }}"
+
+      # Disk space alerts
+      - alert: QLFLowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Low disk space"
+          description: "Available disk space is {{ $value }}%"
+
+      # Network alerts
+      - alert: QLFHighNetworkLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "High network latency"
+          description: "95th percentile HTTP request latency is {{ $value }}s"
+
+  - name: qlf_business_alerts
+    rules:
+      # Business logic alerts
+      - alert: QLFLowOverlayDetectionConfidence
+        expr: avg(qlf_ir_compilation_duration_seconds{overlays_detected="0"}) / avg(qlf_ir_compilation_duration_seconds) > 0.3
+        for: 10m
+        labels:
+          severity: info
+          component: overlay_detection
+        annotations:
+          summary: "Low overlay detection rate"
+          description: "{{ $value | humanizePercentage }} of briefs are not triggering overlay detection"
+
+      - alert: QLFHighTemplateUsage
+        expr: rate(qlf_agent_execution_duration_seconds_count{llm_used="false"}[1h]) / rate(qlf_agent_execution_duration_seconds_count[1h]) > 0.8
+        for: 30m
+        labels:
+          severity: info
+          component: agents
+        annotations:
+          summary: "High template usage rate"
+          description: "{{ $value | humanizePercentage }} of generations are using templates instead of LLM"
+
+      # Security alerts
+      - alert: QLFCriticalVulnerabilities
+        expr: sum(qlf_package_size_bytes{vulnerabilities_count!=""}) by (vulnerabilities_count) > 5
+        for: 0m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Critical vulnerabilities detected"
+          description: "Package contains {{ $value }} critical vulnerabilities"
+
+      - alert: QLFUnsignedPackages
+        expr: rate(qlf_packages_created_total{signed="false"}[1h]) > 0
+        for: 30m
+        labels:
+          severity: info
+          component: security
+        annotations:
+          summary: "Unsigned packages being created"
+          description: "{{ $value }} packages/hour are being created without digital signatures"
+
+  - name: qlf_sla_alerts
+    rules:
+      # SLA and availability alerts
+      - alert: QLFGenerationSLABreach
+        expr: histogram_quantile(0.95, rate(qlf_generation_duration_seconds_bucket[5m])) > 60
+        for: 10m
+        labels:
+          severity: warning
+          component: sla
+        annotations:
+          summary: "Generation SLA breach"
+          description: "95th percentile generation time ({{ $value }}s) exceeds SLA of 60s"
+
+      - alert: QLFPackagingSLABreach
+        expr: histogram_quantile(0.95, rate(qlf_package_build_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: sla
+        annotations:
+          summary: "Packaging SLA breach"
+          description: "95th percentile packaging time ({{ $value }}s) exceeds SLA of 30s"
+
+      - alert: QLFDeploymentSLABreach
+        expr: histogram_quantile(0.95, rate(qlf_deployment_duration_seconds_bucket[5m])) > 120
+        for: 5m
+        labels:
+          severity: warning
+          component: sla
+        annotations:
+          summary: "Deployment SLA breach"
+          description: "95th percentile deployment time ({{ $value }}s) exceeds SLA of 120s"
+
+      # Availability SLA
+      - alert: QLFAvailabilitySLABreach
+        expr: (1 - rate(qlf_errors_total[1h]) / rate(qlf_generations_total[1h])) * 100 < 99.9
+        for: 1h
+        labels:
+          severity: critical
+          component: sla
+        annotations:
+          summary: "Availability SLA breach"
+          description: "System availability ({{ $value }}%) is below SLA of 99.9%"
+
+  - name: qlf_capacity_alerts
+    rules:
+      # Capacity planning alerts
+      - alert: QLFHighRequestVolume
+        expr: rate(qlf_generations_total[5m]) > 10
+        for: 10m
+        labels:
+          severity: info
+          component: capacity
+        annotations:
+          summary: "High request volume"
+          description: "Request rate is {{ $value }} requests/sec, consider scaling"
+
+      - alert: QLFWorkflowBacklog
+        expr: qlf_active_workflows > 20
+        for: 5m
+        labels:
+          severity: warning
+          component: capacity
+        annotations:
+          summary: "High workflow backlog"
+          description: "{{ $value }} active workflows, consider increasing worker capacity"
+
+      - alert: QLFLLMTokenRateHigh
+        expr: rate(qlf_llm_tokens_total[5m]) > 1000
+        for: 10m
+        labels:
+          severity: info
+          component: capacity
+        annotations:
+          summary: "High LLM token usage rate"
+          description: "Token usage rate is {{ $value }} tokens/sec"
+
+  - name: qlf_data_quality_alerts
+    rules:
+      # Data quality alerts
+      - alert: QLFLowGenerationQuality
+        expr: avg(qlf_quality_score) < 8.0
+        for: 15m
+        labels:
+          severity: warning
+          component: quality
+        annotations:
+          summary: "Low generation quality score"
+          description: "Average quality score ({{ $value }}) is below expected threshold of 8.0"
+
+      - alert: QLFHighRepairRate
+        expr: rate(qlf_repair_attempts_total[5m]) / rate(qlf_verifications_total[5m]) > 0.3
+        for: 10m
+        labels:
+          severity: info
+          component: quality
+        annotations:
+          summary: "High code repair rate"
+          description: "{{ $value | humanizePercentage }} of verifications require repair attempts"
+
+      # Documentation alerts
+      - alert: QLFMissingDocumentation
+        expr: rate(qlf_packages_created_total{generate_docs="false"}[1h]) > 0
+        for: 1h
+        labels:
+          severity: info
+          component: documentation
+        annotations:
+          summary: "Packages created without documentation"
+          description: "{{ $value }} packages/hour created without documentation generation"

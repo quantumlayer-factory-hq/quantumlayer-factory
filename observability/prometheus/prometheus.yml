@@ -1,0 +1,130 @@
+# Prometheus configuration for QuantumLayer Factory
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'quantumlayer-factory'
+    environment: 'development'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - "alertmanager:9093"
+
+# Load alerting rules
+rule_files:
+  - "rules.yaml"
+  - "alerts.yaml"
+
+# Scrape configurations
+scrape_configs:
+  # QuantumLayer Factory main services
+  - job_name: 'qlf-api'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  - job_name: 'qlf-worker'
+    static_configs:
+      - targets: ['localhost:8090']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Observability metrics endpoint
+  - job_name: 'qlf-observability'
+    static_configs:
+      - targets: ['localhost:8091']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+
+  # Infrastructure services
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['localhost:9187']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['localhost:9121']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'temporal'
+    static_configs:
+      - targets: ['localhost:7234']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  - job_name: 'minio'
+    static_configs:
+      - targets: ['localhost:9001']
+    metrics_path: '/minio/v2/metrics/cluster'
+    scrape_interval: 30s
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+
+  # Node exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+    scrape_interval: 30s
+
+  # Docker container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Custom application metrics
+  - job_name: 'qlf-custom-metrics'
+    honor_labels: true
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - quantumlayer-factory
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+
+# Remote write configuration (for long-term storage)
+remote_write:
+  - url: "http://localhost:8086/api/v1/prom/write?db=qlf_metrics"
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 200
+      capacity: 2500
+
+# Remote read configuration
+remote_read:
+  - url: "http://localhost:8086/api/v1/prom/read?db=qlf_metrics"
