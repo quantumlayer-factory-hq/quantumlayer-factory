@@ -104,8 +104,8 @@ type SpanInfo struct {
 	EndTime     time.Time
 	Duration    time.Duration
 	Attributes  []attribute.KeyValue
-	Status      trace.Status
-	Events      []trace.Event
+	Status      string
+	Events      []string
 }
 
 // LLMMetrics holds LLM-specific monitoring data
@@ -180,22 +180,12 @@ type DeploymentMetrics struct {
 	Timestamp     time.Time
 }
 
-// HealthStatus represents service health information
-type HealthStatus struct {
-	Service     string    `json:"service"`
-	Status      string    `json:"status"` // "healthy", "unhealthy", "degraded"
-	LastCheck   time.Time `json:"last_check"`
-	Duration    time.Duration `json:"duration"`
-	Message     string    `json:"message,omitempty"`
-	Details     map[string]interface{} `json:"details,omitempty"`
-}
-
 // SystemHealth represents overall system health
 type SystemHealth struct {
-	Status     string                  `json:"status"`
-	Timestamp  time.Time              `json:"timestamp"`
-	Services   map[string]HealthStatus `json:"services"`
-	Summary    HealthSummary          `json:"summary"`
+	Status     string                    `json:"status"`
+	Timestamp  time.Time                `json:"timestamp"`
+	Services   map[string]interface{}   `json:"services"`
+	Summary    HealthSummary           `json:"summary"`
 }
 
 // HealthSummary provides aggregated health information
@@ -227,6 +217,13 @@ type MetricLabels struct {
 	Model     string
 	Overlay   string
 	Result    string // "success", "error", "timeout"
+	CheckName string
+	ErrorType string
+	AgentType string
+	PackageType string
+	Namespace string
+	AppName   string
+	GateType  string
 }
 
 // ToAttributes converts MetricLabels to OpenTelemetry attributes
@@ -256,6 +253,27 @@ func (ml *MetricLabels) ToAttributes() []attribute.KeyValue {
 	}
 	if ml.Result != "" {
 		attrs = append(attrs, attribute.String("result", ml.Result))
+	}
+	if ml.CheckName != "" {
+		attrs = append(attrs, attribute.String("check_name", ml.CheckName))
+	}
+	if ml.ErrorType != "" {
+		attrs = append(attrs, attribute.String("error_type", ml.ErrorType))
+	}
+	if ml.AgentType != "" {
+		attrs = append(attrs, attribute.String("agent_type", ml.AgentType))
+	}
+	if ml.PackageType != "" {
+		attrs = append(attrs, attribute.String("package_type", ml.PackageType))
+	}
+	if ml.Namespace != "" {
+		attrs = append(attrs, attribute.String("namespace", ml.Namespace))
+	}
+	if ml.AppName != "" {
+		attrs = append(attrs, attribute.String("app_name", ml.AppName))
+	}
+	if ml.GateType != "" {
+		attrs = append(attrs, attribute.String("gate_type", ml.GateType))
 	}
 
 	return attrs

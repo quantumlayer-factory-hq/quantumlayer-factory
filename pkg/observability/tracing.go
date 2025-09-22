@@ -7,6 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -93,7 +94,7 @@ func (ts *TracingService) RecordError(span oteltrace.Span, err error, attrs ...a
 	}
 
 	span.RecordError(err, oteltrace.WithAttributes(attrs...))
-	span.SetStatus(oteltrace.StatusError, err.Error())
+	span.SetStatus(codes.Error, err.Error())
 }
 
 // AddEvent adds an event to the current span
@@ -249,9 +250,9 @@ func (ts *TracingService) RecordSpanResult(span oteltrace.Span, duration time.Du
 
 	if !success && errorType != "" {
 		attrs = append(attrs, AttrErrorType.String(errorType))
-		span.SetStatus(oteltrace.StatusError, errorType)
+		span.SetStatus(codes.Error, errorType)
 	} else {
-		span.SetStatus(oteltrace.StatusOK, "")
+		span.SetStatus(codes.Ok, "")
 	}
 
 	span.SetAttributes(attrs...)

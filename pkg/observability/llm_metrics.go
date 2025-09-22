@@ -366,41 +366,6 @@ func (lm *LLMMonitor) RecordLLMMetrics(provider, model string, tokensUsed int64,
 	}
 }
 
-// RecordLLMRequest records LLM request metrics (from types.go interface)
-func (lm *LLMMonitor) RecordLLMRequest(metrics *LLMMetrics) {
-	if lm.metrics == nil {
-		return
-	}
-
-	attrs := []attribute.KeyValue{
-		AttrProvider.String(metrics.Provider),
-		AttrModel.String(metrics.Model),
-		AttrSuccess.Bool(metrics.Success),
-		AttrCacheHit.Bool(metrics.CacheHit),
-		AttrTokensUsed.Int64(metrics.TokensUsed),
-		AttrCost.Float64(metrics.Cost),
-	}
-
-	if !metrics.Success && metrics.ErrorType != "" {
-		attrs = append(attrs, AttrErrorType.String(metrics.ErrorType))
-	}
-
-	// Update all LLM metrics
-	lm.metrics.LLMRequestCounter.Add(context.Background(), 1, metric.WithAttributes(attrs...))
-	lm.metrics.LLMTokenUsage.Add(context.Background(), metrics.TokensUsed, metric.WithAttributes(attrs...))
-	lm.metrics.LLMLatency.Record(context.Background(), metrics.Latency.Seconds(), metric.WithAttributes(attrs...))
-
-	if metrics.CacheHit {
-		lm.metrics.LLMCacheHitCounter.Add(context.Background(), 1, metric.WithAttributes(attrs...))
-	}
-
-	// Update cost tracking
-	lm.updateCostTracking(metrics)
-
-	// Update cost gauge
-	totalCost := lm.GetTotalCost()
-	lm.metrics.LLMCostGauge.Record(context.Background(), totalCost)
-}
 
 // handleBudgetAlert handles budget limit alerts
 func (lm *LLMMonitor) handleBudgetAlert(alert *BudgetAlert) {

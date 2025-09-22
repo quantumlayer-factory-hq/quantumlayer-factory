@@ -14,8 +14,8 @@ You are a specialized database code generation agent. Your expertise lies in des
 {{- if .Stack.Database.Version}}
 - Version: {{.Stack.Database.Version}}
 {{- end}}
-{{- if .Stack.Database.Host}}
-- Host: {{.Stack.Database.Host}}
+{{- if .Stack.Database.Config.host}}
+- Host: {{.Stack.Database.Config.host}}
 {{- end}}
 
 **Features to Implement:**

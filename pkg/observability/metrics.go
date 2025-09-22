@@ -6,19 +6,18 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/prometheus"
+	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/sdk/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
 // MetricsService manages Prometheus metrics collection
 type MetricsService struct {
 	config     *ObservabilityConfig
-	provider   *metric.MeterProvider
+	provider   *sdkmetric.MeterProvider
 	meter      metric.Meter
 	metrics    *Metrics
 	server     *http.Server
@@ -33,13 +32,13 @@ func NewMetricsService(config *ObservabilityConfig) (*MetricsService, error) {
 	}
 
 	// Create Prometheus exporter
-	exporter, err := prometheus.New()
+	exporter, err := promexporter.New()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Prometheus exporter: %w", err)
 	}
 
 	// Create meter provider
-	provider := metric.NewMeterProvider(metric.WithReader(exporter))
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exporter))
 	otel.SetMeterProvider(provider)
 
 	meter := provider.Meter(config.ServiceName)
@@ -240,7 +239,7 @@ func (ms *MetricsService) RecordPackaging(metrics *PackageMetrics) {
 	}
 
 	ms.metrics.PackageCounter.Add(context.Background(), 1, metric.WithAttributes(attrs...))
-	ms.metrics.PackageSize.Record(context.Background(), float64(metrics.Size), metric.WithAttributes(attrs...))
+	ms.metrics.PackageSize.Record(context.Background(), metrics.Size, metric.WithAttributes(attrs...))
 	ms.metrics.PackageBuildTime.Record(context.Background(), metrics.BuildTime.Seconds(), metric.WithAttributes(attrs...))
 	ms.metrics.SBOMGenerationTime.Record(context.Background(), metrics.SBOMTime.Seconds(), metric.WithAttributes(attrs...))
 	ms.metrics.VulnScanTime.Record(context.Background(), metrics.VulnScanTime.Seconds(), metric.WithAttributes(attrs...))
@@ -301,6 +300,16 @@ func (ms *MetricsService) RecordError(component, errorType string) {
 	}
 
 	ms.metrics.ErrorCounter.Add(context.Background(), 1, metric.WithAttributes(attrs...))
+}
+
+// RecordHealthCheck records health check metrics
+func (ms *MetricsService) RecordHealthCheck(duration time.Duration, status float64, labels *MetricLabels) {
+	if !ms.config.MetricsEnabled {
+		return
+	}
+
+	attrs := labels.ToAttributes()
+	ms.metrics.HealthCheckCounter.Add(context.Background(), 1, metric.WithAttributes(attrs...))
 }
 
 // UpdateServiceUptime updates service uptime gauge
@@ -586,8 +595,9 @@ func (ms *MetricsService) MiddlewareFunc() func(http.Handler) http.Handler {
 				AttrSuccess.Bool(rw.statusCode < 400),
 			}
 
-			// Record request metrics (would need to create these counters)
-			// This is a simplified example - full implementation would have HTTP-specific metrics
+			// Record request metrics
+			ms.metrics.GenerationDuration.Record(r.Context(), duration.Seconds(), metric.WithAttributes(attrs...))
+
 			if rw.statusCode >= 400 {
 				ms.RecordError("http_server", fmt.Sprintf("status_%d", rw.statusCode))
 			}

@@ -57,6 +57,9 @@ temp/
 # Build outputs
 dist/
 build/
+bin/
+generated/
+packages/
 
 # Coverage reports
 coverage.html
