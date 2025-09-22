@@ -3,19 +3,24 @@
 ## Overview
 Building on completed Phase 1 (SOC Parser) and Phase 2 Core (IR + Agents), this roadmap delivers the full production system.
 
-## Current Status: Week 4 Complete ✅
+## Current Status: Week 8.5 Complete ✅
 - ✅ SOC Parser (kernel/soc/) - 11/11 tests
 - ✅ IR Compiler (kernel/ir/) - 20+ tests (enhanced with overlay support)
 - ✅ Agent Factory + Multi-Agent Pipeline (kernel/agents/) - All tests passing
 - ✅ Docker Infrastructure (Postgres, Redis, Temporal, Qdrant, MinIO)
 - ✅ Temporal Workflows (kernel/workflows/) - 8/8 tests + LLM integration
-- ✅ CLI Interface (cmd/qlf/) - 5/5 tests + overlay commands + LLM flags
+- ✅ CLI Interface (cmd/qlf/) - 6/6 tests + overlay commands + LLM flags + deploy command
 - ✅ Overlay System (overlays/) - 15/15 tests + 6 production overlays
 - ✅ Prompt Enhancement (kernel/prompts/) - 30/30 tests
 - ✅ Multi-Provider LLM Integration (kernel/llm/) - AWS Bedrock + Azure OpenAI
 - ✅ Complete Multi-Agent Pipeline - Backend, Frontend, Database, API, Test agents
 - ✅ LLM Workflow Integration - CLI flags → Workflow → Agents
 - ✅ Production-Ready LLM Features - Caching, budget tracking, failover
+- ✅ Verification Mesh (kernel/verifier/) - Unit, Contract, Repair gates with LLM auto-fix
+- ✅ Preview Deploy System (services/builder/, services/deploy/) - K8s + Docker containerization
+- ✅ Capsule Packager (services/packager/) - .qlcapsule format with SBOM and attestation
+- ✅ Observability Stack (pkg/observability/) - OpenTelemetry, Prometheus, Grafana, health checks
+- ✅ Complete Deployment Pipeline - Generate → Package → Deploy with .qlcapsule support
 
 ---
 
@@ -712,6 +717,56 @@ make observability-status
 # ✅ Dashboards: Grafana showing real-time metrics
 # ✅ Health: /health, /health/readiness, /health/liveness endpoints
 # ✅ Alerts: 70+ alerting rules for SLA and budget monitoring
+```
+
+---
+
+## Week 8.5: Deployment Pipeline ✅ COMPLETE
+**Goal**: Complete end-to-end deployment workflow
+**Status**: ✅ COMPLETED - Full deployment pipeline with .qlcapsule support
+
+### W8.5.1: Deploy Command Implementation (3 days) ✅ COMPLETED
+**Status**: ✅ Done
+**Owner**: Engineering
+**Deliverables**:
+```
+cmd/qlf/commands/
+├── deploy.go             # Complete deploy command with K8s/Docker Compose support ✅
+└── root.go               # Deploy command registration ✅
+
+services/packager/
+├── packager.go           # ExtractPackage method for .qlcapsule extraction ✅
+
+services/deploy/
+├── k8s_deployer.go       # WaitForReady and FollowLogs methods ✅
+```
+
+**Acceptance Criteria**:
+- ✅ .qlcapsule package extraction and validation
+- ✅ Kubernetes deployment with resource limits, ingress, health checks
+- ✅ Docker Compose deployment configuration
+- ✅ Auto-detection of app configuration (name, port, framework)
+- ✅ Environment variable injection support
+- ✅ Dry-run mode for deployment validation
+- ✅ Port auto-detection based on framework (FastAPI=8000, Flask=5000, etc.)
+- ✅ App name sanitization for deployment compatibility
+
+**Key Deliverables Achieved**:
+- **Complete Deploy Command**: 500+ lines supporting both K8s and Docker Compose
+- **Package Integration**: Full .qlcapsule extraction with manifest validation
+- **Auto-Configuration**: Framework detection and port assignment
+- **Production Features**: Health checks, resource limits, ingress configuration
+- **CLI Integration**: Comprehensive flags for deployment customization
+- **Testing Verified**: Successful dry-run deployments with proper configurations
+
+**Week 8.5 Success Metric**: ✅ ACHIEVED
+```bash
+# End-to-end workflow: generate → package → deploy
+qlf generate "FastAPI user management system" --output /tmp/user-api
+qlf package user-api --source /tmp/user-api --language python --framework fastapi
+qlf deploy user-api-v1.0.0.qlcapsule --target kubernetes --dry-run
+# ✅ Complete pipeline from code generation to deployment ready
+# ✅ Auto-detected FastAPI on port 8000 with proper K8s manifests
 ```
 
 ---

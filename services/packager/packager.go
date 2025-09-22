@@ -1090,3 +1090,67 @@ func (ps *PackagerService) scanBasicVulnerabilities(sourcePath string) (*VulnSca
 	result.ScanDuration = time.Since(startTime)
 	return result, nil
 }
+
+// ExtractPackage extracts a .qlcapsule file to the specified directory
+func (ps *PackagerService) ExtractPackage(capsulePath, extractPath string) error {
+	// Open the capsule file
+	file, err := os.Open(capsulePath)
+	if err != nil {
+		return fmt.Errorf("failed to open capsule file: %w", err)
+	}
+	defer file.Close()
+
+	// Create gzip reader
+	gzipReader, err := gzip.NewReader(file)
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gzipReader.Close()
+
+	// Create tar reader
+	tarReader := tar.NewReader(gzipReader)
+
+	// Extract files
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar header: %w", err)
+		}
+
+		// Create the destination path
+		destPath := filepath.Join(extractPath, header.Name)
+
+		// Ensure the destination directory exists
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			// Create directory
+			if err := os.MkdirAll(destPath, os.FileMode(header.Mode)); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", destPath, err)
+			}
+		case tar.TypeReg:
+			// Create regular file
+			outFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			if err != nil {
+				return fmt.Errorf("failed to create file %s: %w", destPath, err)
+			}
+
+			if _, err := io.Copy(outFile, tarReader); err != nil {
+				outFile.Close()
+				return fmt.Errorf("failed to copy file content: %w", err)
+			}
+			outFile.Close()
+		default:
+			// Skip other file types for now
+			continue
+		}
+	}
+
+	return nil
+}

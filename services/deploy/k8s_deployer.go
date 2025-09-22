@@ -3,6 +3,8 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -655,6 +657,85 @@ func (kd *KubernetesDeployer) validateIngress(manifest map[string]interface{}) e
 		if _, exists := specMap["rules"]; !exists {
 			return fmt.Errorf("ingress spec missing 'rules' field")
 		}
+	}
+
+	return nil
+}
+
+// WaitForReady waits for a deployment to become ready
+func (kd *KubernetesDeployer) WaitForReady(ctx context.Context, namespace, deploymentName string, timeout time.Duration) error {
+	clientset := kd.client.GetClientset()
+
+	// Create a timeout context
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for deployment %s to be ready", deploymentName)
+		default:
+			// Check deployment status
+			deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+			if err != nil {
+				if errors.IsNotFound(err) {
+					return fmt.Errorf("deployment %s not found", deploymentName)
+				}
+				return fmt.Errorf("failed to get deployment status: %w", err)
+			}
+
+			// Check if deployment is ready
+			if deployment.Status.ReadyReplicas == deployment.Status.Replicas && deployment.Status.Replicas > 0 {
+				return nil
+			}
+
+			// Wait before checking again
+			time.Sleep(2 * time.Second)
+		}
+	}
+}
+
+// FollowLogs follows logs from a deployment
+func (kd *KubernetesDeployer) FollowLogs(ctx context.Context, namespace, deploymentName string) error {
+	clientset := kd.client.GetClientset()
+
+	// Get deployment to find pods
+	deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get deployment: %w", err)
+	}
+
+	// Get pods for the deployment
+	labelSelector := fmt.Sprintf("app=%s", deployment.Spec.Selector.MatchLabels["app"])
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	if len(pods.Items) == 0 {
+		return fmt.Errorf("no pods found for deployment %s", deploymentName)
+	}
+
+	// Follow logs from the first pod
+	podName := pods.Items[0].Name
+	req := clientset.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
+		Follow: true,
+	})
+
+	logStream, err := req.Stream(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to stream logs: %w", err)
+	}
+	defer logStream.Close()
+
+	// Copy logs to stdout
+	fmt.Printf("Following logs from pod %s in namespace %s:\n", podName, namespace)
+	fmt.Println("Press Ctrl+C to stop following logs")
+	fmt.Println("---")
+
+	_, err = io.Copy(os.Stdout, logStream)
+	if err != nil {
+		return fmt.Errorf("failed to copy logs: %w", err)
 	}
 
 	return nil
