@@ -74,6 +74,10 @@ Follow these database design standards:
 - Follow PostgreSQL naming conventions
 - Implement proper connection pooling with pgbouncer
 - Use EXPLAIN ANALYZE for query optimization
+- CRITICAL: Use ONLY PostgreSQL syntax (no SQL Server BACKUP/RESTORE statements)
+- CRITICAL: Hash all passwords in seed data using proper bcrypt hashing
+- CRITICAL: Use UUID primary keys consistently across schema and models
+- CRITICAL: Include proper field names matching application models (first_name, last_name, etc.)
 {{- else if eq .Stack.Database.Type "mysql"}}
 - Use InnoDB storage engine for transactions
 - Implement proper character set handling (utf8mb4)
@@ -131,16 +135,81 @@ Follow these database design standards:
 
 ## Output Format
 
-Provide the complete database implementation with:
-- DDL scripts for schema creation
-- Migration files in proper order
-- Seed data scripts with sample data
-- Index creation and optimization scripts
-- Stored procedures and functions
-- View definitions for complex queries
-- Security and role setup scripts
-- Backup and maintenance procedures
-- Performance monitoring queries
-- Documentation of schema design decisions
+**CRITICAL: You MUST respond using EXACTLY the FACTORY SOC (Strict Output Contract) format. This is MANDATORY - any deviation will cause system failure.**
+
+**IMPORTANT: Your FIRST line must be EXACTLY "### FACTORY/1 PATCH" with no preceding text, no explanations, no greetings, no acknowledgments.**
+
+**FORBIDDEN: Do not include any text before the SOC block. Do not start with phrases like "I'll create", "Here's", "Let me", or any explanatory text.**
+
+**CRITICAL: You MUST provide complete, runnable code for ALL files. Do NOT generate placeholder comments or skeleton code. Every file must contain fully functional implementation.**
+
+Your ENTIRE response must follow this EXACT structure:
+
+```
+### FACTORY/1 PATCH
+- file: migrations/001_initial_schema.sql
+- file: migrations/002_indexes.sql
+- file: migrations/003_constraints.sql
+- file: seed/sample_data.sql
+- file: views/user_stats.sql
+- file: procedures/user_management.sql
+- file: scripts/backup.sql
+- file: scripts/maintenance.sql
+```diff
+--- a/migrations/001_initial_schema.sql
++++ b/migrations/001_initial_schema.sql
+@@ -0,0 +1,X @@
++[COMPLETE RUNNABLE DDL SCHEMA HERE]
+
+--- a/migrations/002_indexes.sql
++++ b/migrations/002_indexes.sql
+@@ -0,0 +1,Y @@
++[COMPLETE RUNNABLE INDEX CREATION HERE]
+
+--- a/migrations/003_constraints.sql
++++ b/migrations/003_constraints.sql
+@@ -0,0 +1,Z @@
++[COMPLETE RUNNABLE CONSTRAINT DEFINITIONS HERE]
+
+--- a/seed/sample_data.sql
++++ b/seed/sample_data.sql
+@@ -0,0 +1,A @@
++[COMPLETE RUNNABLE SEED DATA HERE]
+
+--- a/views/user_stats.sql
++++ b/views/user_stats.sql
+@@ -0,0 +1,B @@
++[COMPLETE RUNNABLE VIEW DEFINITIONS HERE]
+
+--- a/procedures/user_management.sql
++++ b/procedures/user_management.sql
+@@ -0,0 +1,C @@
++[COMPLETE RUNNABLE STORED PROCEDURES HERE]
+
+--- a/scripts/backup.sql
++++ b/scripts/backup.sql
+@@ -0,0 +1,D @@
++[COMPLETE RUNNABLE BACKUP SCRIPTS HERE]
+
+--- a/scripts/maintenance.sql
++++ b/scripts/maintenance.sql
+@@ -0,0 +1,E @@
++[COMPLETE RUNNABLE MAINTENANCE SCRIPTS HERE]
+```
+### END
+```
+
+**STRICT RULES - FAILURE TO FOLLOW WILL CAUSE SYSTEM ERROR:**
+1. NO text before "### FACTORY/1 PATCH"
+2. NO text after "### END"
+3. NO explanations, comments, or prose outside the SOC structure
+4. ALL code must be complete and immediately runnable SQL
+5. Replace X, Y, Z with actual line counts
+6. Each file must be a valid unified diff patch
+7. Include ALL necessary files for a complete working database
+8. EXACTLY match the header format "### FACTORY/1 PATCH"
+9. EXACTLY match the footer format "### END"
+10. **CRITICAL**: EVERY file listed in the file list MUST have a corresponding diff section with complete runnable code
+11. **CRITICAL**: Do not truncate or skip any files - provide complete implementation for ALL files
 
 Generate production-ready database code that follows industry best practices for scalability, security, and maintainability.

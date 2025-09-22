@@ -96,7 +96,14 @@ func (p *Parser) Parse(input string) (*Patch, error) {
 				state = "in_diff"
 				inDiff = true
 			} else if diffHeaderRegex.MatchString(line) {
-				// Handle raw unified diff format (Claude's natural output)
+				// Handle raw unified diff format but extract all files first
+				// Parse the entire content to find all file references
+				allFiles := p.extractAllFilesFromContent(input)
+				for _, file := range allFiles {
+					if !contains(patch.Files, file) {
+						patch.Files = append(patch.Files, file)
+					}
+				}
 				state = "in_raw_diff"
 				diffContent.WriteString(line + "\n")
 			} else if line == "" {
@@ -184,6 +191,7 @@ func (p *Parser) isPathAllowed(path string) bool {
 func (p *Parser) validateDiff(content string) error {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	hasValidLine := false
+	hasFileHeader := false
 
 	diffHeaderRegex := regexp.MustCompile("^(---|\\+\\+\\+|@@|\\+|-| ).*")
 
@@ -193,7 +201,18 @@ func (p *Parser) validateDiff(content string) error {
 			continue
 		}
 
+		// Check for file headers to identify diff sections
+		if strings.HasPrefix(line, "--- a/") || strings.HasPrefix(line, "+++ b/") {
+			hasFileHeader = true
+			hasValidLine = true
+			continue
+		}
+
+		// Allow lines in unified diff format OR raw code lines (for flexibility)
 		if diffHeaderRegex.MatchString(line) {
+			hasValidLine = true
+		} else if hasFileHeader {
+			// Allow raw code lines after file headers (LLM may not use + prefix consistently)
 			hasValidLine = true
 		} else {
 			return fmt.Errorf("invalid diff line: %s", line)
@@ -235,6 +254,38 @@ func IsRefusal(input string) bool {
 		}
 	}
 
+	return false
+}
+
+// extractAllFilesFromContent scans the entire content to find all file references
+func (p *Parser) extractAllFilesFromContent(content string) []string {
+	var files []string
+	lines := strings.Split(content, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Look for file references in both file list and diff headers
+		if fileRegex.MatchString(line) {
+			matches := fileRegex.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				files = append(files, matches[1])
+			}
+		} else if strings.HasPrefix(line, "--- a/") {
+			filepath := strings.TrimPrefix(line, "--- a/")
+			files = append(files, filepath)
+		}
+	}
+
+	return files
+}
+
+// contains checks if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
 	return false
 }
 

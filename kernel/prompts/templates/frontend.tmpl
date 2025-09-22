@@ -14,11 +14,10 @@ You are a specialized frontend code generation agent. Your expertise lies in cre
 {{- if .Stack.Frontend.Framework}}
 - Framework: {{.Stack.Frontend.Framework}}
 {{- end}}
-{{- if .Stack.Frontend.UILibrary}}
-- UI Library: {{.Stack.Frontend.UILibrary}}
+{{- if .Stack.Frontend.Libraries}}
+- Libraries: {{range $index, $lib := .Stack.Frontend.Libraries}}{{if $index}}, {{end}}{{$lib}}{{end}}
 {{- end}}
-- State Management: {{.Stack.Frontend.StateManagement}}
-- Build Tool: {{.Stack.Frontend.BuildTool}}
+- Build Tool: {{.Stack.Frontend.Build}}
 
 **Features to Implement:**
 {{- range .Features}}
@@ -92,6 +91,41 @@ Follow these coding standards:
 - Use Angular Material for UI components
 {{- end}}
 
+### Library-Specific Requirements
+{{- $hasRouter := false -}}
+{{- $hasQuery := false -}}
+{{- $hasMUI := false -}}
+{{- $hasAntD := false -}}
+{{- $hasChakra := false -}}
+{{- range .Stack.Frontend.Libraries -}}
+  {{- if or (eq . "react-router-dom") (eq . "@reach/router") -}} {{ $hasRouter = true }} {{- end -}}
+  {{- if or (eq . "react-query") (eq . "@tanstack/react-query") -}} {{ $hasQuery = true }} {{- end -}}
+  {{- if or (eq . "@mui/material") (eq . "@material-ui/core") -}} {{ $hasMUI = true }} {{- end -}}
+  {{- if eq . "antd" -}} {{ $hasAntD = true }} {{- end -}}
+  {{- if eq . "@chakra-ui/react" -}} {{ $hasChakra = true }} {{- end -}}
+{{- end -}}
+
+{{- if $hasRouter}}
+- Implement proper routing with nested routes and route guards
+- Use programmatic navigation and route parameters
+{{- end}}
+{{- if $hasQuery}}
+- Use React Query for server state management and caching
+- Implement proper error handling and loading states
+{{- end}}
+{{- if $hasMUI}}
+- Follow Material Design principles and Material-UI patterns
+- Use Material-UI's theming system for consistent styling
+{{- end}}
+{{- if $hasAntD}}
+- Follow Ant Design principles and component patterns
+- Use Ant Design's form validation and data display components
+{{- end}}
+{{- if $hasChakra}}
+- Follow Chakra UI's simple, modular and accessible design system
+- Use Chakra's built-in theming and responsive design utilities
+{{- end}}
+
 ### General Standards
 - Consistent naming conventions for components and files
 - Proper component organization and file structure
@@ -134,13 +168,105 @@ Follow these coding standards:
 
 ## Output Format
 
-Provide the complete frontend implementation with:
-- Clear project structure and file organization
-- Comprehensive component documentation
-- Example configuration files (package.json, webpack, etc.)
-- Styling solutions (CSS modules, styled-components, etc.)
-- Unit test examples
-- Storybook stories for components
-- Build and deployment configuration
+**CRITICAL: You MUST respond using EXACTLY the FACTORY SOC (Strict Output Contract) format. This is MANDATORY - any deviation will cause system failure.**
+
+**IMPORTANT: Your FIRST line must be EXACTLY "### FACTORY/1 PATCH" with no preceding text, no explanations, no greetings, no acknowledgments.**
+
+**FORBIDDEN: Do not include any text before the SOC block. Do not start with phrases like "I'll create", "Here's", "Let me", or any explanatory text.**
+
+**CRITICAL: You MUST provide complete, runnable code for ALL files. Do NOT generate placeholder comments or skeleton code. Every file must contain fully functional implementation.**
+
+Your ENTIRE response must follow this EXACT structure:
+
+```
+### FACTORY/1 PATCH
+- file: package.json
+- file: public/index.html
+- file: src/index.js
+- file: src/App.jsx
+- file: src/components/Layout.jsx
+- file: src/components/Header.jsx
+- file: src/pages/Home.jsx
+- file: src/pages/Login.jsx
+- file: src/pages/Register.jsx
+- file: src/services/api.js
+- file: src/utils/auth.js
+- file: src/styles/globals.css
+```diff
+--- a/package.json
++++ b/package.json
+@@ -0,0 +1,X @@
++[COMPLETE RUNNABLE PACKAGE.JSON HERE]
+
+--- a/public/index.html
++++ b/public/index.html
+@@ -0,0 +1,Y @@
++[COMPLETE RUNNABLE HTML HERE]
+
+--- a/src/index.js
++++ b/src/index.js
+@@ -0,0 +1,Z @@
++[COMPLETE RUNNABLE REACT ENTRY POINT HERE]
+
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -0,0 +1,A @@
++[COMPLETE RUNNABLE REACT APP COMPONENT HERE]
+
+--- a/src/components/Layout.jsx
++++ b/src/components/Layout.jsx
+@@ -0,0 +1,B @@
++[COMPLETE RUNNABLE LAYOUT COMPONENT HERE]
+
+--- a/src/components/Header.jsx
++++ b/src/components/Header.jsx
+@@ -0,0 +1,C @@
++[COMPLETE RUNNABLE HEADER COMPONENT HERE]
+
+--- a/src/pages/Home.jsx
++++ b/src/pages/Home.jsx
+@@ -0,0 +1,D @@
++[COMPLETE RUNNABLE HOME PAGE HERE]
+
+--- a/src/pages/Login.jsx
++++ b/src/pages/Login.jsx
+@@ -0,0 +1,E @@
++[COMPLETE RUNNABLE LOGIN PAGE HERE]
+
+--- a/src/pages/Register.jsx
++++ b/src/pages/Register.jsx
+@@ -0,0 +1,F @@
++[COMPLETE RUNNABLE REGISTER PAGE HERE]
+
+--- a/src/services/api.js
++++ b/src/services/api.js
+@@ -0,0 +1,G @@
++[COMPLETE RUNNABLE API SERVICE HERE]
+
+--- a/src/utils/auth.js
++++ b/src/utils/auth.js
+@@ -0,0 +1,H @@
++[COMPLETE RUNNABLE AUTH UTILITY HERE]
+
+--- a/src/styles/globals.css
++++ b/src/styles/globals.css
+@@ -0,0 +1,I @@
++[COMPLETE RUNNABLE CSS HERE]
+```
+### END
+```
+
+**STRICT RULES - FAILURE TO FOLLOW WILL CAUSE SYSTEM ERROR:**
+1. NO text before "### FACTORY/1 PATCH"
+2. NO text after "### END"
+3. NO explanations, comments, or prose outside the SOC structure
+4. ALL code must be complete and immediately runnable
+5. Replace X, Y, Z with actual line counts
+6. Each file must be a valid unified diff patch
+7. Include ALL necessary files for a complete working frontend
+8. EXACTLY match the header format "### FACTORY/1 PATCH"
+9. EXACTLY match the footer format "### END"
+10. **CRITICAL**: EVERY file listed in the file list MUST have a corresponding diff section with complete runnable code
+11. **CRITICAL**: Do not truncate or skip any files - provide complete implementation for ALL files
 
 Generate production-ready code that follows modern frontend best practices and provides an excellent user experience.

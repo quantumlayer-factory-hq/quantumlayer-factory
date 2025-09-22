@@ -300,9 +300,10 @@ func (a *BackendAgent) convertSOCPatchToFiles(patch *soc.Patch, spec *ir.IRSpec)
 	// Extracted files from diff content
 	_ = len(fileContents)
 
+	// Process all files from the SOC patch
 	for _, filePath := range patch.Files {
 		content, exists := fileContents[filePath]
-		if !exists {
+		if !exists || content == "" {
 			continue
 		}
 
@@ -335,9 +336,19 @@ func (a *BackendAgent) extractFilesFromDiff(diffContent string) (map[string]stri
 			// Start new file
 			currentFile = strings.TrimPrefix(line, "--- a/")
 			currentContent.Reset()
+		} else if strings.HasPrefix(line, "+++ b/") {
+			// Skip +++ b/ lines (they don't contain content)
+			continue
+		} else if strings.HasPrefix(line, "@@") {
+			// Skip @@ hunk headers
+			continue
 		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
 			// Add content line (remove + prefix)
 			currentContent.WriteString(strings.TrimPrefix(line, "+"))
+			currentContent.WriteString("\n")
+		} else if currentFile != "" && line != "" && !strings.HasPrefix(line, "---") {
+			// Handle raw code lines without + prefix (LLM may not always add +)
+			currentContent.WriteString(line)
 			currentContent.WriteString("\n")
 		}
 	}
