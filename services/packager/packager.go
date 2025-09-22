@@ -2,6 +2,7 @@ package packager
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto"
@@ -15,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -65,13 +67,23 @@ func NewPackagerService(config *PackagerConfig) *PackagerService {
 
 // DefaultPackagerConfig returns default packager configuration
 func DefaultPackagerConfig() *PackagerConfig {
+	// Enable signing if a signing key is configured via environment
+	signingEnabled := false
+	signingKeyPath := os.Getenv("QLF_SIGNING_KEY_PATH")
+	if signingKeyPath != "" {
+		// Check if the key file exists
+		if _, err := os.Stat(signingKeyPath); err == nil {
+			signingEnabled = true
+		}
+	}
+
 	return &PackagerConfig{
 		WorkDir:          "/tmp/qlf-packager",
 		OutputDir:        "./packages",
 		TempDir:          "/tmp",
 		CompressionType:  "gzip",
 		CompressionLevel: 6,
-		SigningEnabled:   false,
+		SigningEnabled:   signingEnabled,
 		SBOMEnabled:      true,
 		SBOMTool:         "syft",
 		SBOMFormat:       "spdx",
@@ -139,12 +151,22 @@ func (ps *PackagerService) CreatePackage(ctx context.Context, req *PackageReques
 	manifest.Artifacts = artifacts
 
 	// Sign the package if enabled
-	if ps.config.SigningEnabled && req.SigningKey != "" {
-		signature, err := ps.signManifest(manifest, req.SigningKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to sign package: %w", err)
+	if ps.config.SigningEnabled {
+		// Use provided signing key or fall back to environment variable
+		signingKey := req.SigningKey
+		if signingKey == "" {
+			signingKey = os.Getenv("QLF_SIGNING_KEY_PATH")
 		}
-		manifest.Signatures = []DigitalSignature{*signature}
+
+		if signingKey != "" {
+			signature, err := ps.signManifest(manifest, signingKey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to sign package: %w", err)
+			}
+			manifest.Signatures = []DigitalSignature{*signature}
+		} else {
+			fmt.Println("Warning: Signing enabled but no signing key provided. Set QLF_SIGNING_KEY_PATH environment variable.")
+		}
 	}
 
 	// Create the .qlcapsule file
@@ -266,7 +288,7 @@ func (ps *PackagerService) createManifest(req *PackageRequest) (*CapsuleManifest
 }
 
 func (ps *PackagerService) generateSBOM(sourcePath string) (*SBOM, error) {
-	// This is a mock implementation - in production would use actual SBOM tools
+	// Use actual SBOM tools (Syft) for production-ready generation
 	sbom := &SBOM{
 		Format:      ps.config.SBOMFormat,
 		Version:     "1.0",
@@ -275,34 +297,24 @@ func (ps *PackagerService) generateSBOM(sourcePath string) (*SBOM, error) {
 		Components:  []Component{},
 	}
 
-	// Mock component for demonstration
-	component := Component{
-		Type:    "application",
-		Name:    filepath.Base(sourcePath),
-		Version: "1.0.0",
-		License: "MIT",
+	// Generate SBOM using Syft if available, otherwise use fallback analysis
+	components, err := ps.generateComponentsWithSyft(sourcePath)
+	if err != nil {
+		// Fallback to basic file analysis if Syft is not available
+		fmt.Printf("Warning: Syft not available, using basic analysis: %v\n", err)
+		components, err = ps.generateComponentsBasic(sourcePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate components: %w", err)
+		}
 	}
 
-	sbom.Components = append(sbom.Components, component)
-
+	sbom.Components = components
 	return sbom, nil
 }
 
 func (ps *PackagerService) scanVulnerabilities(sourcePath string) (*VulnScanResult, error) {
-	// This is a mock implementation - in production would use actual vulnerability scanners
-	result := &VulnScanResult{
-		TotalVulns:   0,
-		Critical:     0,
-		High:         0,
-		Medium:       0,
-		Low:          0,
-		Fixable:      0,
-		ScanTime:     time.Now(),
-		Scanner:      ps.config.VulnScanner,
-		ScanDuration: time.Second,
-	}
-
-	return result, nil
+	// Use actual vulnerability scanning with Trivy or fallback to basic analysis
+	return ps.scanWithTrivy(sourcePath)
 }
 
 func (ps *PackagerService) createAttestation(req *PackageRequest) *Attestation {
@@ -659,4 +671,422 @@ func (ps *PackagerService) generateKeyID(key *rsa.PrivateKey) string {
 	hasher := sha256.New()
 	hasher.Write(pubKeyBytes)
 	return fmt.Sprintf("%x", hasher.Sum(nil))[:16]
+}
+
+// generateComponentsWithSyft uses Syft CLI tool for accurate SBOM generation
+func (ps *PackagerService) generateComponentsWithSyft(sourcePath string) ([]Component, error) {
+	// Check if syft is available
+	cmd := exec.Command("syft", "--version")
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("syft not installed: %w", err)
+	}
+
+	// Run syft to generate SBOM
+	outputFormat := "json"
+	if ps.config.SBOMFormat == "spdx" {
+		outputFormat = "spdx-json"
+	} else if ps.config.SBOMFormat == "cyclonedx" {
+		outputFormat = "cyclonedx-json"
+	}
+
+	cmd = exec.Command("syft", "dir:"+sourcePath, "-o", outputFormat)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("syft execution failed: %w", err)
+	}
+
+	// Parse syft output and convert to our Component format
+	return ps.parseSyftOutput(output, outputFormat)
+}
+
+// parseSyftOutput converts Syft JSON output to our Component format
+func (ps *PackagerService) parseSyftOutput(output []byte, format string) ([]Component, error) {
+	var components []Component
+
+	// Parse based on format
+	switch format {
+	case "json":
+		var syftResult struct {
+			Artifacts []struct {
+				Name     string `json:"name"`
+				Version  string `json:"version"`
+				Type     string `json:"type"`
+				Licenses []struct {
+					Value string `json:"value"`
+				} `json:"licenses"`
+			} `json:"artifacts"`
+		}
+
+		if err := json.Unmarshal(output, &syftResult); err != nil {
+			return nil, fmt.Errorf("failed to parse syft output: %w", err)
+		}
+
+		for _, artifact := range syftResult.Artifacts {
+			license := "Unknown"
+			if len(artifact.Licenses) > 0 {
+				license = artifact.Licenses[0].Value
+			}
+
+			components = append(components, Component{
+				Type:         artifact.Type,
+				Name:         artifact.Name,
+				Version:      artifact.Version,
+				License:      license,
+				Dependencies: []string{},
+			})
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported syft format: %s", format)
+	}
+
+	return components, nil
+}
+
+// generateComponentsBasic provides basic component analysis when Syft is not available
+func (ps *PackagerService) generateComponentsBasic(sourcePath string) ([]Component, error) {
+	var components []Component
+
+	// Analyze package files to extract dependencies
+	if err := filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Detect package files and extract dependencies
+		switch filepath.Base(path) {
+		case "package.json":
+			if deps, err := ps.parsePackageJson(path); err == nil {
+				components = append(components, deps...)
+			}
+		case "requirements.txt":
+			if deps, err := ps.parseRequirementsTxt(path); err == nil {
+				components = append(components, deps...)
+			}
+		case "go.mod":
+			if deps, err := ps.parseGoMod(path); err == nil {
+				components = append(components, deps...)
+			}
+		case "Cargo.toml":
+			if deps, err := ps.parseCargoToml(path); err == nil {
+				components = append(components, deps...)
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("failed to walk source directory: %w", err)
+	}
+
+	// Add main application component
+	components = append(components, Component{
+		Type:         "application",
+		Name:         filepath.Base(sourcePath),
+		Version:      "1.0.0",
+		License:      "Unknown",
+		Dependencies: []string{},
+	})
+
+	return components, nil
+}
+
+// Package file parsers for basic analysis
+func (ps *PackagerService) parsePackageJson(path string) ([]Component, error) {
+	// Basic Node.js package.json parsing
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var pkg struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return nil, err
+	}
+
+	var components []Component
+	for name, version := range pkg.Dependencies {
+		components = append(components, Component{
+			Type:    "npm-package",
+			Name:    name,
+			Version: version,
+			License: "Unknown",
+		})
+	}
+
+	return components, nil
+}
+
+func (ps *PackagerService) parseRequirementsTxt(path string) ([]Component, error) {
+	// Basic Python requirements.txt parsing
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var components []Component
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Simple parsing: package==version or package>=version
+		parts := strings.FieldsFunc(line, func(c rune) bool {
+			return c == '=' || c == '>' || c == '<' || c == '!'
+		})
+		if len(parts) > 0 {
+			name := strings.TrimSpace(parts[0])
+			version := "Unknown"
+			if len(parts) > 1 {
+				version = strings.TrimSpace(parts[1])
+			}
+
+			components = append(components, Component{
+				Type:    "python-package",
+				Name:    name,
+				Version: version,
+				License: "Unknown",
+			})
+		}
+	}
+
+	return components, nil
+}
+
+func (ps *PackagerService) parseGoMod(path string) ([]Component, error) {
+	// Basic Go mod parsing
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var components []Component
+	lines := strings.Split(string(data), "\n")
+	inRequire := false
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "require") {
+			inRequire = true
+			continue
+		}
+		if line == ")" {
+			inRequire = false
+			continue
+		}
+		if inRequire && line != "" {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				name := parts[0]
+				version := parts[1]
+				components = append(components, Component{
+					Type:    "go-module",
+					Name:    name,
+					Version: version,
+					License: "Unknown",
+				})
+			}
+		}
+	}
+
+	return components, nil
+}
+
+func (ps *PackagerService) parseCargoToml(path string) ([]Component, error) {
+	// Basic Cargo.toml parsing (simplified)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var components []Component
+	lines := strings.Split(string(data), "\n")
+	inDependencies := false
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[dependencies]") {
+			inDependencies = true
+			continue
+		}
+		if strings.HasPrefix(line, "[") && inDependencies {
+			inDependencies = false
+			continue
+		}
+		if inDependencies && strings.Contains(line, "=") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				name := strings.TrimSpace(parts[0])
+				version := strings.Trim(strings.TrimSpace(parts[1]), "\"")
+				components = append(components, Component{
+					Type:    "rust-crate",
+					Name:    name,
+					Version: version,
+					License: "Unknown",
+				})
+			}
+		}
+	}
+
+	return components, nil
+}
+
+// scanWithTrivy performs vulnerability scanning using Trivy
+func (ps *PackagerService) scanWithTrivy(sourcePath string) (*VulnScanResult, error) {
+	startTime := time.Now()
+
+	// Check if trivy is available
+	_, err := exec.LookPath("trivy")
+	if err != nil {
+		// Fallback to basic vulnerability scanning
+		return ps.scanBasicVulnerabilities(sourcePath)
+	}
+
+	// Create temporary file for trivy output
+	tmpFile, err := os.CreateTemp("", "trivy-scan-*.json")
+	if err != nil {
+		return ps.scanBasicVulnerabilities(sourcePath)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	// Run trivy scan
+	cmd := exec.Command("trivy", "fs", "--format", "json", "--output", tmpFile.Name(), sourcePath)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	if err != nil {
+		fmt.Printf("Trivy scan failed, using fallback: %v (%s)\n", err, stderr.String())
+		return ps.scanBasicVulnerabilities(sourcePath)
+	}
+
+	// Parse trivy output
+	data, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		return ps.scanBasicVulnerabilities(sourcePath)
+	}
+
+	var trivyResult struct {
+		Results []struct {
+			Vulnerabilities []struct {
+				VulnerabilityID string `json:"VulnerabilityID"`
+				Severity       string `json:"Severity"`
+				PkgName        string `json:"PkgName"`
+				InstalledVersion string `json:"InstalledVersion"`
+				FixedVersion   string `json:"FixedVersion"`
+				Title          string `json:"Title"`
+				Description    string `json:"Description"`
+			} `json:"Vulnerabilities"`
+		} `json:"Results"`
+	}
+
+	if err := json.Unmarshal(data, &trivyResult); err != nil {
+		return ps.scanBasicVulnerabilities(sourcePath)
+	}
+
+	// Convert to our format
+	result := &VulnScanResult{
+		ScanTime:     startTime,
+		Scanner:      "trivy",
+		ScanDuration: time.Since(startTime),
+	}
+
+	for _, res := range trivyResult.Results {
+		for _, vuln := range res.Vulnerabilities {
+			result.TotalVulns++
+
+			switch strings.ToUpper(vuln.Severity) {
+			case "CRITICAL":
+				result.Critical++
+			case "HIGH":
+				result.High++
+			case "MEDIUM":
+				result.Medium++
+			case "LOW":
+				result.Low++
+			}
+
+			if vuln.FixedVersion != "" && vuln.FixedVersion != "unknown" {
+				result.Fixable++
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// scanBasicVulnerabilities provides fallback vulnerability scanning
+func (ps *PackagerService) scanBasicVulnerabilities(sourcePath string) (*VulnScanResult, error) {
+	startTime := time.Now()
+
+	result := &VulnScanResult{
+		TotalVulns:   0,
+		Critical:     0,
+		High:         0,
+		Medium:       0,
+		Low:          0,
+		Fixable:      0,
+		ScanTime:     startTime,
+		Scanner:      "basic-fallback",
+		ScanDuration: time.Since(startTime),
+	}
+
+	// Basic checks for known vulnerable patterns
+	err := filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Continue on errors
+		}
+
+		// Check for known vulnerable file patterns
+		filename := info.Name()
+
+		// Check for old JavaScript libraries (basic heuristics)
+		if strings.Contains(filename, "jquery") && strings.Contains(filename, "1.") {
+			result.TotalVulns++
+			result.Medium++
+			result.Fixable++
+		}
+
+		// Check for vulnerable Python packages in requirements.txt
+		if filename == "requirements.txt" {
+			content, err := os.ReadFile(path)
+			if err == nil {
+				if strings.Contains(string(content), "django==1.") ||
+				   strings.Contains(string(content), "flask==0.") ||
+				   strings.Contains(string(content), "requests==2.0") {
+					result.TotalVulns++
+					result.High++
+					result.Fixable++
+				}
+			}
+		}
+
+		// Check for vulnerable Node.js packages
+		if filename == "package.json" {
+			content, err := os.ReadFile(path)
+			if err == nil {
+				if strings.Contains(string(content), "\"lodash\": \"4.1") ||
+				   strings.Contains(string(content), "\"express\": \"3.") {
+					result.TotalVulns++
+					result.High++
+					result.Fixable++
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("basic vulnerability scan failed: %w", err)
+	}
+
+	result.ScanDuration = time.Since(startTime)
+	return result, nil
 }

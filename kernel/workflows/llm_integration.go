@@ -15,10 +15,20 @@ func createLLMEnabledFactory(provider, model string) (*agents.AgentFactory, erro
 	// Logging provider and model for debugging
 	fmt.Printf("createLLMEnabledFactory called with provider=%s model=%s\n", provider, model)
 
-	// If no provider specified, return regular factory with default agents
+	// If no provider specified, try to load defaults from environment
 	if provider == "" || provider == "template" {
-		fmt.Println("Using template-based factory - no provider specified")
-		return createTemplateFactory(), nil
+		defaultProvider := os.Getenv("QLF_LLM_PROVIDER")
+		defaultModel := os.Getenv("QLF_LLM_MODEL")
+
+		if defaultProvider != "" && defaultModel != "" {
+			fmt.Printf("No provider specified, using defaults: provider=%s model=%s\n", defaultProvider, defaultModel)
+			provider = defaultProvider
+			model = defaultModel
+		} else {
+			fmt.Println("Using template-based factory - no provider specified and no defaults configured")
+			fmt.Println("Tip: Set QLF_LLM_PROVIDER and QLF_LLM_MODEL environment variables for automatic LLM usage")
+			return createTemplateFactory(), nil
+		}
 	}
 
 	// Create LLM configuration from environment and parameters

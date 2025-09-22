@@ -198,4 +198,6 @@ type PackageResult struct {
 	ArtifactPaths []string `json:"artifact_paths"`
 	OutputPath    string   `json:"output_path,omitempty"`  // directory where files were written
 	SOCPatch      string   `json:"soc_patch,omitempty"`    // SOC-formatted patch for dry-run
+	CapsulePath   string   `json:"capsule_path,omitempty"` // path to .qlcapsule package
+	CapsuleSize   int64    `json:"capsule_size,omitempty"` // size of .qlcapsule package in bytes
 }

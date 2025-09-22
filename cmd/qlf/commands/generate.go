@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,6 +32,7 @@ var (
 	flagTTL            string
 	flagSubdomain      string
 	flagPort           int
+	flagPackage        bool
 )
 
 func NewGenerateCmd() *cobra.Command {
@@ -53,6 +56,7 @@ func NewGenerateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&flagTTL, "ttl", "24h", "Time-to-live for preview deployment (e.g., 1h, 24h, 3d)")
 	cmd.Flags().StringVar(&flagSubdomain, "subdomain", "", "Custom subdomain for preview (auto-generated if not specified)")
 	cmd.Flags().IntVar(&flagPort, "port", 0, "Application port (auto-detected if not specified)")
+	cmd.Flags().BoolVar(&flagPackage, "package", false, "Create .qlcapsule package after generation")
 	return cmd
 }
 
@@ -161,6 +165,38 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s %s\n", green("✓"), res.Summary)
 		if res.OutputPath != "" {
 			fmt.Printf("  Output: %s\n", cyan(res.OutputPath))
+		}
+	}
+
+	// Package if requested and not dry run (after files are written)
+	if flagPackage && !flagDryRun && res.Success && res.OutputPath != "" {
+		fmt.Printf("\n%s Creating package...\n", yellow("📦"))
+
+		// Use the package command logic to create .qlcapsule
+		packageName := "generated-app"
+		if res.IRSpec != nil && res.IRSpec.App.Name != "" {
+			packageName = res.IRSpec.App.Name
+		}
+
+		// Determine language and framework from IRSpec
+		language := "unknown"
+		framework := "unknown"
+		if res.IRSpec != nil {
+			if res.IRSpec.App.Stack.Backend.Language != "" {
+				language = res.IRSpec.App.Stack.Backend.Language
+			}
+			if res.IRSpec.App.Stack.Backend.Framework != "" {
+				framework = res.IRSpec.App.Stack.Backend.Framework
+			}
+		}
+
+		// Call the package functionality directly
+		err := runPackageGenerated(res.OutputPath, packageName, language, framework)
+		if err != nil {
+			fmt.Printf("%s Failed to create package: %v\n", color.RedString("✗"), err)
+		} else {
+			fmt.Printf("%s Package created successfully!\n", green("✓"))
+			fmt.Printf("  Package: %s/%s.qlcapsule\n", cyan(res.OutputPath+"/packages"), packageName)
 		}
 	}
 
@@ -278,4 +314,44 @@ func getOverlayTypeIcon(overlayType string) string {
 	default:
 		return "📦"
 	}
+}
+
+// runPackageGenerated creates a .qlcapsule package from the generated code
+func runPackageGenerated(sourcePath, packageName, language, framework string) error {
+	// Get the path to the qlf binary
+	execPath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	qlfBinary := filepath.Join(filepath.Dir(execPath), "qlf")
+
+	// Convert to absolute path
+	absSourcePath, err := filepath.Abs(sourcePath)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	// Prepare the package command arguments
+	args := []string{
+		"package",
+		"--source", absSourcePath,
+		"--name", packageName,
+		"--version", "1.0.0",
+		"--description", "Generated application package",
+		"--language", language,
+		"--framework", framework,
+		"--output-dir", filepath.Join(absSourcePath, "packages"),
+	}
+
+	// Execute the package command from current working directory
+	cmd := exec.Command(qlfBinary, args...)
+
+	// Capture output for better error reporting
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("package command failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -397,37 +398,35 @@ func publishPackage(ctx context.Context, capsulePath string, packageFlags *Packa
 	config := packager.DefaultDeliveryConfig()
 	deliveryService := packager.NewDeliveryService(config)
 
-	// Register channels (in a real implementation, these would be loaded from config)
+	// Load delivery channel configurations from environment/config
 	for _, channelName := range packageFlags.publish {
 		switch channelName {
 		case "registry":
-			channel := packager.CreateRegistryChannel("registry", packager.RegistryConfig{
-				URL:       "https://registry.quantumlayer.dev",
-				Username:  "user",
-				Password:  "pass",
-				Namespace: "quantumlayer",
-				TLS:       true,
-			})
+			registryConfig := loadRegistryConfig()
+			if registryConfig == nil {
+				fmt.Printf("⚠️  Registry configuration not found. Please set REGISTRY_* environment variables\n")
+				continue
+			}
+			channel := packager.CreateRegistryChannel("registry", *registryConfig)
 			deliveryService.RegisterChannel("registry", channel)
 
 		case "cdn":
-			channel := packager.CreateCDNChannel("cdn", packager.CDNConfig{
-				URL:        "https://cdn.quantumlayer.dev",
-				APIKey:     "cdn-key",
-				BucketName: "packages",
-				Region:     "us-east-1",
-				PublicRead: packageFlags.public,
-				CacheTTL:   3600,
-			})
+			cdnConfig := loadCDNConfig()
+			if cdnConfig == nil {
+				fmt.Printf("⚠️  CDN configuration not found. Please set CDN_* environment variables\n")
+				continue
+			}
+			cdnConfig.PublicRead = packageFlags.public
+			channel := packager.CreateCDNChannel("cdn", *cdnConfig)
 			deliveryService.RegisterChannel("cdn", channel)
 
 		case "direct":
-			channel := packager.CreateDirectChannel("direct", packager.DirectConfig{
-				BaseURL:     "https://packages.quantumlayer.dev",
-				StoragePath: "/var/packages",
-				ServeHTTP:   true,
-				HTTPPort:    8080,
-			})
+			directConfig := loadDirectConfig()
+			if directConfig == nil {
+				fmt.Printf("⚠️  Direct delivery configuration not found. Please set DIRECT_* environment variables\n")
+				continue
+			}
+			channel := packager.CreateDirectChannel("direct", *directConfig)
 			deliveryService.RegisterChannel("direct", channel)
 
 		default:
@@ -467,4 +466,95 @@ func formatSize(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// loadRegistryConfig loads registry configuration from environment variables
+func loadRegistryConfig() *packager.RegistryConfig {
+	url := os.Getenv("REGISTRY_URL")
+	username := os.Getenv("REGISTRY_USERNAME")
+	password := os.Getenv("REGISTRY_PASSWORD")
+	namespace := os.Getenv("REGISTRY_NAMESPACE")
+
+	if url == "" || username == "" || password == "" {
+		return nil
+	}
+
+	// Set defaults
+	if namespace == "" {
+		namespace = "quantumlayer"
+	}
+
+	tlsStr := os.Getenv("REGISTRY_TLS")
+	tls := tlsStr != "false" // Default to true
+
+	return &packager.RegistryConfig{
+		URL:       url,
+		Username:  username,
+		Password:  password,
+		Namespace: namespace,
+		TLS:       tls,
+	}
+}
+
+// loadCDNConfig loads CDN configuration from environment variables
+func loadCDNConfig() *packager.CDNConfig {
+	url := os.Getenv("CDN_URL")
+	apiKey := os.Getenv("CDN_API_KEY")
+	bucketName := os.Getenv("CDN_BUCKET_NAME")
+
+	if url == "" || apiKey == "" || bucketName == "" {
+		return nil
+	}
+
+	// Set defaults
+	region := os.Getenv("CDN_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	cacheTTLStr := os.Getenv("CDN_CACHE_TTL")
+	cacheTTL := 3600 // Default to 1 hour
+	if cacheTTLStr != "" {
+		if ttl, err := strconv.Atoi(cacheTTLStr); err == nil {
+			cacheTTL = ttl
+		}
+	}
+
+	return &packager.CDNConfig{
+		URL:        url,
+		APIKey:     apiKey,
+		BucketName: bucketName,
+		Region:     region,
+		PublicRead: false, // Will be set from flags
+		CacheTTL:   cacheTTL,
+	}
+}
+
+// loadDirectConfig loads direct delivery configuration from environment variables
+func loadDirectConfig() *packager.DirectConfig {
+	baseURL := os.Getenv("DIRECT_BASE_URL")
+	storagePath := os.Getenv("DIRECT_STORAGE_PATH")
+
+	if baseURL == "" || storagePath == "" {
+		return nil
+	}
+
+	// Set defaults
+	serveHTTPStr := os.Getenv("DIRECT_SERVE_HTTP")
+	serveHTTP := serveHTTPStr != "false" // Default to true
+
+	httpPortStr := os.Getenv("DIRECT_HTTP_PORT")
+	httpPort := 8080 // Default port
+	if httpPortStr != "" {
+		if port, err := strconv.Atoi(httpPortStr); err == nil {
+			httpPort = port
+		}
+	}
+
+	return &packager.DirectConfig{
+		BaseURL:     baseURL,
+		StoragePath: storagePath,
+		ServeHTTP:   serveHTTP,
+		HTTPPort:    httpPort,
+	}
 }
