@@ -49,6 +49,7 @@ func LoadConfig(configPath string) (*Config, error) {
 			AlertThreshold:  0.8,
 			TrackingEnabled: true,
 		},
+		Batch: DefaultBatchConfig(),
 	}
 
 	// Load from file if it exists

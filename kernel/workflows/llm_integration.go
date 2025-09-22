@@ -3,6 +3,7 @@ package workflows
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/agents"
 	"github.com/quantumlayer-factory-hq/quantumlayer-factory/kernel/llm"
@@ -45,6 +46,20 @@ func createLLMEnabledFactory(provider, model string) (*agents.AgentFactory, erro
 			APIKey:      os.Getenv("AZURE_OPENAI_API_KEY"),
 			APIVersion:  "2024-02-01",
 			Location:    "uksouth",
+		},
+		Cache: llm.CacheConfig{
+			Enabled:  true,  // Enable caching by default
+			TTL:      1 * time.Hour,
+			RedisURL: getRedisURL(),
+		},
+		RateLimit: llm.RateLimitConfig{
+			RequestsPerMinute: 60,
+			TokensPerMinute:   90000,
+		},
+		Budget: llm.BudgetConfig{
+			MonthlyLimit:    500.00,
+			AlertThreshold:  0.8,
+			TrackingEnabled: true,
 		},
 	}
 
@@ -109,4 +124,15 @@ func createTemplateFactory() *agents.AgentFactory {
 		return agents.NewTestAgent()
 	})
 	return factory
+}
+
+// getRedisURL returns the Redis URL from environment or default
+func getRedisURL() string {
+	if url := os.Getenv("REDIS_URL"); url != "" {
+		return url
+	}
+	if url := os.Getenv("QLF_REDIS_URL"); url != "" {
+		return url
+	}
+	return "redis://localhost:6379"
 }

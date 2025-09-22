@@ -150,6 +150,9 @@ type Config struct {
 
 	// Budget configuration
 	Budget BudgetConfig `yaml:"budget"`
+
+	// Batch configuration
+	Batch BatchConfig `yaml:"batch"`
 }
 
 // BedrockConfig represents AWS Bedrock configuration

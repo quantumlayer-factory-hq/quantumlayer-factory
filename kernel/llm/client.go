@@ -19,14 +19,40 @@ func NewClientFactory(config *Config) *ClientFactory {
 
 // CreateClient creates a client for the specified provider
 func (f *ClientFactory) CreateClient(provider Provider) (Client, error) {
+	var baseClient Client
+	var err error
+
 	switch provider {
 	case ProviderBedrock:
-		return NewBedrockClient(f.config.Bedrock)
+		baseClient, err = NewBedrockClient(f.config.Bedrock)
 	case ProviderAzure:
-		return NewAzureOpenAIClient(f.config.Azure)
+		baseClient, err = NewAzureOpenAIClient(f.config.Azure)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap with caching if enabled
+	var wrappedClient Client = baseClient
+	if f.config.Cache.Enabled {
+		cache, err := NewCache(f.config.Cache)
+		if err != nil {
+			// Log error but continue without caching
+			fmt.Printf("Failed to initialize cache, continuing without caching: %v\n", err)
+		} else {
+			wrappedClient = NewCachedClient(wrappedClient, cache, f.config.Cache)
+		}
+	}
+
+	// Wrap with batching if enabled
+	if f.config.Batch.EnableBatching {
+		wrappedClient = NewBatchClient(wrappedClient, f.config.Batch)
+	}
+
+	return wrappedClient, nil
 }
 
 // CreateDefaultClient creates a client using the default provider

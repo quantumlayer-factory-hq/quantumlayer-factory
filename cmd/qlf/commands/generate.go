@@ -33,6 +33,7 @@ var (
 	flagSubdomain      string
 	flagPort           int
 	flagPackage        bool
+	flagParallel       bool
 )
 
 func NewGenerateCmd() *cobra.Command {
@@ -57,6 +58,7 @@ func NewGenerateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&flagSubdomain, "subdomain", "", "Custom subdomain for preview (auto-generated if not specified)")
 	cmd.Flags().IntVar(&flagPort, "port", 0, "Application port (auto-detected if not specified)")
 	cmd.Flags().BoolVar(&flagPackage, "package", false, "Create .qlcapsule package after generation")
+	cmd.Flags().BoolVar(&flagParallel, "parallel", false, "Enable parallel agent execution for faster generation")
 	return cmd
 }
 
@@ -119,6 +121,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		Provider:  flagProvider,
 		Model:     flagModel,
 		Compare:   flagCompare,
+		Parallel:  flagParallel,
 	}
 
 	we, err := c.ExecuteWorkflow(context.Background(), opts, wf.FactoryWorkflow, input)

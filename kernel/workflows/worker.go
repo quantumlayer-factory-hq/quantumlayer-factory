@@ -55,6 +55,7 @@ func StartWorker(config WorkerConfig) error {
 	w.RegisterActivity(ParseBriefActivity)
 	w.RegisterActivity(ValidateIRActivity)
 	w.RegisterActivity(GenerateCodeActivity)
+	w.RegisterActivity(ParallelGenerateCodeActivity)
 	w.RegisterActivity(VerifyCodeActivity)
 	w.RegisterActivity(PackageArtifactsActivity)
 
