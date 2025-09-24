@@ -1,0 +1,282 @@
+{
+  "version": "1.0",
+  "brief": "PCI-compliant payment processor",
+  "app": {
+    "name": "Fintech Web",
+    "description": "pci-compliant payment processor",
+    "type": "web",
+    "domain": "fintech",
+    "stack": {
+      "backend": {
+        "language": "python",
+        "framework": "fastapi",
+        "libraries": [],
+        "runtime": "docker"
+      },
+      "frontend": {
+        "language": "typescript",
+        "framework": "react",
+        "libraries": [
+          "@tanstack/react-query",
+          "react-router-dom"
+        ],
+        "build": "vite"
+      },
+      "database": {
+        "type": "postgresql",
+        "version": "15",
+        "features": [
+          "migrations",
+          "indexes"
+        ]
+      },
+      "cache": {
+        "type": "",
+        "version": ""
+      }
+    },
+    "features": [
+      {
+        "name": "Payment Processing",
+        "description": "Handle payments and billing",
+        "type": "payment",
+        "priority": "high",
+        "dependencies": null,
+        "entities": null,
+        "operations": [
+          "charge",
+          "refund",
+          "webhook"
+        ]
+      }
+    ],
+    "scale": {
+      "users": {
+        "initial": 100,
+        "peak": 1000,
+        "growth": 50
+      },
+      "requests": {
+        "initial": 1000,
+        "peak": 10000,
+        "growth": 100
+      },
+      "storage": {
+        "initial": 1,
+        "peak": 100,
+        "growth": 200
+      },
+      "latency": "500ms",
+      "uptime": "99.9%",
+      "concurrency": 100
+    }
+  },
+  "non_functionals": {
+    "security": {
+      "authentication": [
+        "jwt"
+      ],
+      "authorization": [
+        "rbac"
+      ],
+      "encryption": [
+        "tls",
+        "bcrypt"
+      ],
+      "audit": true,
+      "compliance": [
+        "pci"
+      ]
+    },
+    "performance": {
+      "response_time": "500ms",
+      "throughput": "1000rps",
+      "memory": "512MB",
+      "cpu": "2cores"
+    },
+    "compliance": {
+      "standards": [
+        "pci-dss"
+      ],
+      "data_retention": "7years",
+      "audit_log": true
+    },
+    "monitoring": {
+      "metrics": [
+        "cpu",
+        "memory",
+        "requests",
+        "errors"
+      ],
+      "logging": "structured",
+      "tracing": false,
+      "alerts": []
+    }
+  },
+  "api": {
+    "type": "rest",
+    "version": "v1",
+    "base_url": "/api/v1",
+    "auth": {
+      "type": "bearer",
+      "scopes": null,
+      "required": true
+    },
+    "endpoints": [],
+    "schemas": [],
+    "config": {
+      "cors": true,
+      "compression": true,
+      "versioning": "path",
+      "pagination": "offset"
+    }
+  },
+  "data": {
+    "entities": [],
+    "relationships": [],
+    "migrations": [],
+    "seeds": [],
+    "indexes": [],
+    "config": {
+      "migrations": true,
+      "seeds": true,
+      "soft_delete": false,
+      "timestamps": true
+    }
+  },
+  "ui": {
+    "type": "spa",
+    "pages": [
+      {
+        "name": "Home",
+        "path": "/",
+        "title": "Home",
+        "description": "",
+        "components": null,
+        "auth": false
+      },
+      {
+        "name": "Login",
+        "path": "/login",
+        "title": "Login",
+        "description": "",
+        "components": null,
+        "auth": false
+      }
+    ],
+    "components": [],
+    "theme": {
+      "primary": "#007bff",
+      "secondary": "#6c757d",
+      "style": "bootstrap"
+    },
+    "config": {
+      "responsive": true,
+      "pwa": false,
+      "i18n": false
+    }
+  },
+  "ops": {
+    "environment": [
+      {
+        "name": "development",
+        "url": "",
+        "provider": "docker",
+        "region": "local",
+        "config": null
+      },
+      {
+        "name": "staging",
+        "url": "",
+        "provider": "k8s",
+        "region": "us-east-1",
+        "config": null
+      },
+      {
+        "name": "production",
+        "url": "",
+        "provider": "k8s",
+        "region": "us-east-1",
+        "config": null
+      }
+    ],
+    "ci_cd": {
+      "provider": "github",
+      "triggers": [
+        "push",
+        "pr"
+      ],
+      "stages": [
+        "test",
+        "build",
+        "deploy"
+      ]
+    },
+    "monitoring": {
+      "provider": "prometheus",
+      "dashboards": [
+        "overview",
+        "performance",
+        "errors"
+      ],
+      "alerts": [
+        "high_error_rate",
+        "high_latency"
+      ]
+    },
+    "backup": {
+      "frequency": "daily",
+      "retention": "30d",
+      "provider": "s3"
+    },
+    "scaling": {
+      "type": "horizontal",
+      "min": 2,
+      "max": 10,
+      "triggers": [
+        "cpu",
+        "memory"
+      ]
+    },
+    "config": {
+      "ssl": true,
+      "cdn": true,
+      "load_balancer": true
+    }
+  },
+  "acceptance": [
+    {
+      "id": "functional-001",
+      "description": "All API endpoints return proper HTTP status codes",
+      "type": "functional",
+      "priority": "must",
+      "testable": true,
+      "automated": true
+    },
+    {
+      "id": "security-001",
+      "description": "All endpoints require proper authentication",
+      "type": "security",
+      "priority": "must",
+      "testable": true,
+      "automated": true
+    },
+    {
+      "id": "performance-001",
+      "description": "API response time is under 500ms for 95% of requests",
+      "type": "performance",
+      "priority": "should",
+      "testable": true,
+      "automated": true
+    }
+  ],
+  "metadata": {
+    "created_at": "2025-09-23T00:14:00.635969429Z",
+    "updated_at": "2025-09-23T00:14:00.635969479Z",
+    "version": "1.0",
+    "confidence": 0.39999999999999997,
+    "completeness": 0.7,
+    "tags": [],
+    "source": "ai"
+  }
+}
