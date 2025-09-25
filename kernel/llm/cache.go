@@ -2,6 +2,8 @@ package llm
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -189,16 +191,13 @@ func GenerateCacheKey(req *GenerateRequest) string {
 		key = fmt.Sprintf("%s:%s", key, req.Model)
 	}
 
-	// Simple hash (in production, use a proper hash function)
+	// Use secure SHA-256 hash
 	hash := hashString(key)
-	return fmt.Sprintf("req:%x", hash)
+	return fmt.Sprintf("req:%s", hash)
 }
 
-// Simple string hash function
-func hashString(s string) uint32 {
-	h := uint32(0)
-	for _, c := range s {
-		h = h*31 + uint32(c)
-	}
-	return h
+// Secure hash function using SHA-256
+func hashString(s string) string {
+	hash := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(hash[:])
 }
