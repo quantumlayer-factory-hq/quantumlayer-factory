@@ -1,0 +1,170 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: var(--font-inter), system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-bg-primary text-text-primary;
+  }
+}
+
+@layer components {
+  /* Glassmorphic Panel Base Class */
+  .glass-panel {
+    @apply bg-glass-white backdrop-blur-sm border border-glass-border rounded-2xl shadow-2xl;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  /* Glassmorphic Button */
+  .glass-button {
+    @apply bg-gradient-to-r from-glass-white to-transparent border border-glass-border rounded-xl px-6 py-3;
+    @apply transition-all duration-300 hover:bg-white/10 hover:border-white/20;
+    @apply hover:-translate-y-0.5 hover:shadow-xl;
+    box-shadow: 0 4px 20px rgba(74, 158, 255, 0.1);
+  }
+
+  .glass-button:hover {
+    box-shadow: 0 6px 25px rgba(74, 158, 255, 0.2);
+  }
+
+  /* Agent Node Styles */
+  .agent-node {
+    @apply glass-panel p-4 transition-all duration-300;
+  }
+
+  .agent-node.active {
+    @apply animate-agent-activate;
+    box-shadow:
+      0 0 30px rgba(74, 158, 255, 0.4),
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .agent-node.pending {
+    @apply opacity-60;
+  }
+
+  .agent-node.completed {
+    box-shadow:
+      0 0 20px rgba(16, 185, 129, 0.3),
+      0 8px 32px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  /* Progress Bar */
+  .progress-bar {
+    @apply relative h-1 bg-white/5 rounded-full overflow-hidden;
+  }
+
+  .progress-fill {
+    @apply absolute h-full bg-gradient-to-r from-quantum-primary/50 to-quantum-primary/30;
+    @apply transition-all duration-500 ease-out;
+  }
+
+  /* Code Editor Styles */
+  .code-preview {
+    @apply glass-panel overflow-hidden;
+  }
+
+  .code-tabs {
+    @apply border-b border-white/5 px-6 py-4 flex gap-2;
+  }
+
+  .code-tab {
+    @apply px-3 py-1 rounded-lg bg-white/5 text-text-secondary text-sm;
+    @apply hover:bg-white/10 hover:text-text-primary transition-all duration-200;
+  }
+
+  .code-tab.active {
+    @apply bg-quantum-primary/20 text-quantum-primary border border-quantum-primary/30;
+  }
+
+  /* Status Indicators */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-dot.active {
+    @apply bg-quantum-success animate-pulse-glow;
+  }
+
+  .status-dot.pending {
+    @apply bg-text-muted;
+  }
+
+  .status-dot.completed {
+    @apply bg-quantum-primary;
+  }
+
+  /* Metrics Cards */
+  .metric-card {
+    @apply glass-panel p-6 animate-fade-in;
+  }
+
+  .metric-value {
+    @apply text-2xl font-bold text-text-primary;
+  }
+
+  .metric-label {
+    @apply text-sm text-text-muted uppercase tracking-wide;
+  }
+
+  /* Floating Action Button */
+  .fab {
+    @apply fixed bottom-8 right-8 w-16 h-16 rounded-2xl;
+    @apply bg-gradient-to-r from-quantum-primary to-blue-600;
+    @apply shadow-2xl transition-all duration-300 hover:-translate-y-1;
+    @apply flex items-center justify-center text-white;
+    box-shadow:
+      0 10px 40px rgba(74, 158, 255, 0.3),
+      0 2px 10px rgba(0, 0, 0, 0.2);
+  }
+
+  .fab:hover {
+    box-shadow:
+      0 15px 50px rgba(74, 158, 255, 0.4),
+      0 5px 15px rgba(0, 0, 0, 0.3);
+  }
+}
+
+@layer utilities {
+  /* Custom scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  /* Text gradients */
+  .text-gradient {
+    @apply bg-gradient-to-r from-quantum-primary to-quantum-purple bg-clip-text text-transparent;
+  }
+
+  /* Backdrop blur utilities */
+  .backdrop-blur-glass {
+    backdrop-filter: blur(10px) saturate(180%);
+    -webkit-backdrop-filter: blur(10px) saturate(180%);
+  }
+}
