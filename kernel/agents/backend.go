@@ -223,30 +223,47 @@ func (a *BackendAgent) generateWithLLM(ctx context.Context, req *GenerationReque
 		content = strings.TrimSpace(content) + "\n### END"
 	}
 
+	// Try SOC parsing first, fallback to direct diff parsing
+	var files []GeneratedFile
+	var parseErr error
+
 	// Filter out prose contamination before SOC validation
 	content = a.filterProseFromSOC(content)
 
 	socParser := soc.NewParser(nil) // Allow all file paths
 	patch, err := socParser.Parse(content)
-	if err != nil {
-		return fmt.Errorf("SOC validation failed: %w", err)
-	}
-	if !patch.Valid {
-		return fmt.Errorf("LLM generated invalid SOC format: %v", patch.Errors)
-	}
+	if err != nil || !patch.Valid {
+		// SOC parsing failed, try direct diff parsing
+		fmt.Printf("[BACKEND] SOC parsing failed (err=%v, valid=%v), attempting direct diff parsing...\n", err, patch != nil && patch.Valid)
 
-	// Convert SOC patch to generated files
-	// Patch validation: valid=%v, files=%d, content=%d bytes
-	// File list: %v
-	_ = patch.Valid
-	_ = len(patch.Files)
-	_ = len(patch.Content)
-	files, err := a.convertSOCPatchToFiles(patch, req.Spec)
-	if err != nil {
-		return fmt.Errorf("failed to parse generated code: %w", err)
+		diffFiles, diffErr := a.extractFilesFromDiff(response.Content)
+		if diffErr != nil || len(diffFiles) == 0 {
+			// Both approaches failed
+			socErr := fmt.Sprintf("SOC validation failed: %v", err)
+			if patch != nil && !patch.Valid {
+				socErr = fmt.Sprintf("LLM generated invalid SOC format: %v", patch.Errors)
+			}
+			return fmt.Errorf("%s; diff parsing also failed: %v", socErr, diffErr)
+		}
+
+		// Convert diff files to GeneratedFile format
+		files = a.convertDiffFilesToGenerated(diffFiles, req.Spec)
+		fmt.Printf("[BACKEND] Successfully parsed %d files using direct diff parsing\n", len(files))
+	} else {
+		// SOC parsing succeeded
+		// Convert SOC patch to generated files
+		files, parseErr = a.convertSOCPatchToFiles(patch, req.Spec)
+		if parseErr != nil {
+			return fmt.Errorf("failed to parse generated code: %w", parseErr)
+		}
+		fmt.Printf("[BACKEND] Successfully parsed %d files using SOC format\n", len(files))
 	}
 	// Converted to %d generated files
 	_ = len(files)
+
+	// Post-process files to extract any leftover diff content
+	files = a.postProcessFiles(files)
+	fmt.Printf("[BACKEND] After post-processing: %d files\n", len(files))
 
 	// Add generated files to result
 	result.Files = append(result.Files, files...)
@@ -320,42 +337,295 @@ func (a *BackendAgent) convertSOCPatchToFiles(patch *soc.Patch, spec *ir.IRSpec)
 	return files, nil
 }
 
-// extractFilesFromDiff extracts file contents from unified diff format
+// convertDiffFilesToGenerated converts extracted diff files to GeneratedFile format
+func (a *BackendAgent) convertDiffFilesToGenerated(diffFiles map[string]string, spec *ir.IRSpec) []GeneratedFile {
+	files := []GeneratedFile{}
+
+	for filePath, content := range diffFiles {
+		if content == "" {
+			continue
+		}
+
+		file := GeneratedFile{
+			Path:     filePath,
+			Type:     a.determineFileType(filePath),
+			Language: a.detectLanguage(filePath),
+			Template: "diff_llm_generated",
+			Content:  content,
+		}
+		files = append(files, file)
+	}
+
+	return files
+}
+
+// postProcessFiles cleans up generated files by extracting leftover diff content
+func (a *BackendAgent) postProcessFiles(files []GeneratedFile) []GeneratedFile {
+	processedFiles := make([]GeneratedFile, 0, len(files))
+	additionalFiles := make([]GeneratedFile, 0)
+
+	for _, file := range files {
+		// Check if file content contains leftover diff markers
+		if strings.Contains(file.Content, "\n--- a/") {
+			cleanContent, extractedFiles := a.extractLeftoverDiffs(file.Content)
+
+			// Update the original file with clean content
+			cleanFile := file
+			cleanFile.Content = cleanContent
+			processedFiles = append(processedFiles, cleanFile)
+
+			// Add extracted files
+			for filename, content := range extractedFiles {
+				if content != "" {
+					extractedFile := GeneratedFile{
+						Path:     filename,
+						Type:     a.determineFileType(filename),
+						Language: a.detectLanguage(filename),
+						Template: "post_processed_diff",
+						Content:  content,
+					}
+					additionalFiles = append(additionalFiles, extractedFile)
+				}
+			}
+		} else {
+			// File is clean, keep as-is
+			processedFiles = append(processedFiles, file)
+		}
+	}
+
+	// Combine processed and additional files, avoiding duplicates
+	allFiles := a.deduplicateFiles(append(processedFiles, additionalFiles...))
+
+	if len(additionalFiles) > 0 {
+		fmt.Printf("[BACKEND] Post-processing extracted %d additional files from leftover diff content\n", len(additionalFiles))
+	}
+
+	return allFiles
+}
+
+// extractLeftoverDiffs separates clean content from leftover diff sections
+func (a *BackendAgent) extractLeftoverDiffs(content string) (string, map[string]string) {
+	extractedFiles := make(map[string]string)
+
+	// Find the first diff marker
+	diffStart := strings.Index(content, "\n--- a/")
+	if diffStart == -1 {
+		return content, extractedFiles
+	}
+
+	// Split content: clean part + diff part
+	cleanContent := strings.TrimSpace(content[:diffStart])
+	diffContent := content[diffStart+1:] // Skip the leading \n
+
+	// Extract files from the diff content
+	diffFiles, err := a.extractFilesFromDiff(diffContent)
+	if err != nil {
+		fmt.Printf("[BACKEND] Warning: failed to extract leftover diff content: %v\n", err)
+		return content, extractedFiles // Return original if extraction fails
+	}
+
+	// Merge extracted files
+	for filename, fileContent := range diffFiles {
+		extractedFiles[filename] = fileContent
+	}
+
+	return cleanContent, extractedFiles
+}
+
+// deduplicateFiles removes duplicate files, preferring the last occurrence (most complete)
+func (a *BackendAgent) deduplicateFiles(files []GeneratedFile) []GeneratedFile {
+	fileMap := make(map[string]GeneratedFile)
+	var result []GeneratedFile
+
+	// Build map to detect duplicates (last wins)
+	for _, file := range files {
+		fileMap[file.Path] = file
+	}
+
+	// Preserve original order where possible
+	seen := make(map[string]bool)
+	for _, file := range files {
+		if !seen[file.Path] {
+			result = append(result, fileMap[file.Path])
+			seen[file.Path] = true
+		}
+	}
+
+	if len(result) < len(files) {
+		fmt.Printf("[BACKEND] Deduplication removed %d duplicate files\n", len(files)-len(result))
+	}
+
+	return result
+}
+
+// attemptDiffRepair repairs common diff format issues that LLMs create
+func (a *BackendAgent) attemptDiffRepair(diffContent string) string {
+	lines := strings.Split(diffContent, "\n")
+	var repairedLines []string
+
+	for i, line := range lines {
+		// Add missing +++ header after --- header
+		if strings.HasPrefix(line, "--- a/") && i+1 < len(lines) {
+			repairedLines = append(repairedLines, line)
+			nextLine := lines[i+1]
+			if !strings.HasPrefix(nextLine, "+++ b/") {
+				// Extract filename and add missing +++ header
+				filename := strings.TrimPrefix(line, "--- a/")
+				repairedLines = append(repairedLines, "+++ b/"+filename)
+			}
+			continue
+		}
+
+		// Add missing + prefix to code lines that look like content
+		if !strings.HasPrefix(line, "---") && !strings.HasPrefix(line, "+++") &&
+		   !strings.HasPrefix(line, "@@") && !strings.HasPrefix(line, "+") &&
+		   !strings.HasPrefix(line, "-") && line != "" {
+			// Heuristic: if it looks like code, add + prefix
+			if a.looksLikeCode(line) {
+				repairedLines = append(repairedLines, "+"+line)
+				continue
+			}
+		}
+
+		repairedLines = append(repairedLines, line)
+	}
+
+	return strings.Join(repairedLines, "\n")
+}
+
+// looksLikeCode uses heuristics to determine if a line looks like code content
+func (a *BackendAgent) looksLikeCode(line string) bool {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return false
+	}
+
+	// Common code patterns
+	codePatterns := []string{
+		"import ", "from ", "def ", "class ", "function ", "const ", "let ", "var ",
+		"if ", "for ", "while ", "try ", "catch ", "throw ", "return ", "export ",
+		"interface ", "type ", "enum ", "async ", "await ", "public ", "private ",
+		"protected ", "static ", "final ", "abstract ", "extends ", "implements ",
+		"package ", "namespace ", "using ", "include ", "#include", "require(",
+		"module.exports", "export default", "export {", "import {",
+	}
+
+	for _, pattern := range codePatterns {
+		if strings.HasPrefix(line, pattern) {
+			return true
+		}
+	}
+
+	// Check for common code structures
+	if strings.Contains(line, "() {") || strings.Contains(line, "): ") ||
+	   strings.Contains(line, " = ") || strings.Contains(line, " => ") ||
+	   strings.Contains(line, "://") || strings.HasSuffix(line, ";") ||
+	   strings.HasSuffix(line, "{") || strings.HasSuffix(line, "}") ||
+	   strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t") {
+		return true
+	}
+
+	return false
+}
+
+// extractFilesFromDiff extracts file contents from unified diff format (robust version)
 func (a *BackendAgent) extractFilesFromDiff(diffContent string) (map[string]string, error) {
+	// First attempt repair of common diff format issues
+	diffContent = a.attemptDiffRepair(diffContent)
+
 	files := make(map[string]string)
 	currentFile := ""
 	var currentContent strings.Builder
+	inFileContent := false
+
+	// Strip any prose before/after diff content
+	if start := strings.Index(diffContent, "--- a/"); start > 0 {
+		diffContent = diffContent[start:]
+	}
+	if start := strings.Index(diffContent, "diff --git"); start >= 0 && start < strings.Index(diffContent, "--- a/") {
+		diffContent = diffContent[start:]
+	}
 
 	lines := strings.Split(diffContent, "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "--- a/") {
-			// Save previous file if exists
-			if currentFile != "" {
-				files[currentFile] = currentContent.String()
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Detect new file start (more robust)
+		if strings.HasPrefix(line, "--- a/") || strings.HasPrefix(line, "--- /dev/null") {
+			// Save previous file if exists and has content
+			if currentFile != "" && currentContent.Len() > 0 {
+				content := strings.TrimSpace(currentContent.String())
+				if content != "" {
+					files[currentFile] = content
+				}
 			}
-			// Start new file
-			currentFile = strings.TrimPrefix(line, "--- a/")
+
+			// Extract filename from --- line
+			if strings.HasPrefix(line, "--- a/") {
+				currentFile = strings.TrimSpace(strings.TrimPrefix(line, "--- a/"))
+			}
 			currentContent.Reset()
-		} else if strings.HasPrefix(line, "+++ b/") {
-			// Skip +++ b/ lines (they don't contain content)
+			inFileContent = false
 			continue
-		} else if strings.HasPrefix(line, "@@") {
-			// Skip @@ hunk headers
+		}
+
+		// Handle +++ line (use it to confirm/update filename)
+		if strings.HasPrefix(line, "+++ b/") {
+			newFile := strings.TrimSpace(strings.TrimPrefix(line, "+++ b/"))
+			if newFile != "" && newFile != "/dev/null" {
+				currentFile = newFile
+			}
+			inFileContent = true
 			continue
-		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-			// Add content line (remove + prefix)
-			currentContent.WriteString(strings.TrimPrefix(line, "+"))
-			currentContent.WriteString("\n")
-		} else if currentFile != "" && line != "" && !strings.HasPrefix(line, "---") {
-			// Handle raw code lines without + prefix (LLM may not always add +)
-			currentContent.WriteString(line)
-			currentContent.WriteString("\n")
+		}
+
+		// Skip hunk headers and git metadata
+		if strings.HasPrefix(line, "@@") ||
+		   strings.HasPrefix(line, "diff --git") ||
+		   strings.HasPrefix(line, "index ") {
+			inFileContent = true
+			continue
+		}
+
+		// Collect file content
+		if currentFile != "" {
+			// Handle added lines in diff
+			if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				content := strings.TrimPrefix(line, "+")
+				currentContent.WriteString(content)
+				currentContent.WriteString("\n")
+				inFileContent = true
+			} else if !strings.HasPrefix(line, "-") &&
+					  !strings.HasPrefix(line, "\\") &&
+					  !strings.HasPrefix(line, "diff") &&
+					  !strings.HasPrefix(line, "index") {
+				// Context line or raw content (when LLM forgets + prefix)
+				// Only add if we're clearly in file content or line looks like code
+				if inFileContent ||
+				   strings.Contains(line, "import ") ||
+				   strings.Contains(line, "from ") ||
+				   strings.Contains(line, "def ") ||
+				   strings.Contains(line, "class ") ||
+				   strings.Contains(line, "function ") ||
+				   (i > 0 && currentContent.Len() > 0) {
+					currentContent.WriteString(line)
+					currentContent.WriteString("\n")
+				}
+			}
 		}
 	}
 
 	// Save last file
-	if currentFile != "" {
-		files[currentFile] = currentContent.String()
+	if currentFile != "" && currentContent.Len() > 0 {
+		content := strings.TrimSpace(currentContent.String())
+		if content != "" {
+			files[currentFile] = content
+		}
+	}
+
+	// Validate we extracted at least one file
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no files could be extracted from diff content")
 	}
 
 	return files, nil
@@ -760,9 +1030,21 @@ func (a *BackendAgent) generatePythonRequirements(spec *ir.IRSpec) string {
 
 // generateGoBackend generates Go backend code
 func (a *BackendAgent) generateGoBackend(req *GenerationRequest, result *GenerationResult) error {
-	// TODO: Implement Go backend generation
-	result.Warnings = append(result.Warnings, "Go backend generation not yet implemented")
-	return nil
+	framework := req.Spec.App.Stack.Backend.Framework
+	if framework == "" {
+		framework = "gin"
+	}
+
+	switch framework {
+	case "gin":
+		return a.generateGinBackend(req, result)
+	case "echo":
+		return a.generateEchoBackend(req, result)
+	case "fiber":
+		return a.generateFiberBackend(req, result)
+	default:
+		return fmt.Errorf("unsupported Go framework: %s", framework)
+	}
 }
 
 // generateNodeBackend generates Node.js backend code
@@ -937,6 +1219,28 @@ func (a *BackendAgent) filterProseFromSOC(content string) string {
 			continue
 		}
 
+		// Convert prose-like lines inside diff blocks to proper comments
+		if (inDiff || inRawDiff) && strings.HasPrefix(line, "+") {
+			content := strings.TrimPrefix(line, "+")
+			content = strings.TrimSpace(content)
+
+			// Check if it looks like prose (contains spaces and common English words)
+			if !strings.HasPrefix(content, "#") &&
+			   !strings.HasPrefix(content, "//") &&
+			   !strings.HasPrefix(content, "--") &&
+			   strings.Contains(content, " ") &&
+			   (strings.Contains(lowerLine, "get the current user") ||
+			    strings.Contains(lowerLine, "return the") ||
+			    strings.Contains(lowerLine, "based on") ||
+			    strings.Contains(lowerLine, "jwt token")) {
+
+				// Detect language from context to use proper comment syntax
+				commentPrefix := a.detectCommentPrefix(strings.Join(lines, "\n"))
+				filteredLines = append(filteredLines, "+    " + commentPrefix + " " + content)
+				continue
+			}
+		}
+
 		// Keep other content (including empty lines before file list completion)
 		if !fileListDone || trimmed != "" {
 			filteredLines = append(filteredLines, line)
@@ -948,4 +1252,251 @@ func (a *BackendAgent) filterProseFromSOC(content string) string {
 	_ = len(lines)
 	_ = len(filteredLines)
 	return result
+}
+
+// detectCommentPrefix detects the appropriate comment prefix for the current language context
+func (a *BackendAgent) detectCommentPrefix(content string) string {
+	// Extract file paths from the entire SOC content to detect language
+	// Look at the full SOC content to determine the primary language being generated
+	if strings.Contains(content, "main.go") || strings.Contains(content, ".go") {
+		return "//"
+	}
+	if strings.Contains(content, "main.py") || strings.Contains(content, ".py") {
+		return "#"
+	}
+	if strings.Contains(content, ".js") || strings.Contains(content, ".ts") {
+		return "//"
+	}
+	if strings.Contains(content, ".sql") {
+		return "--"
+	}
+	// Default to Python-style comments if unsure
+	return "#"
+}
+
+// generateGinBackend generates Gin-specific Go backend code
+func (a *BackendAgent) generateGinBackend(req *GenerationRequest, result *GenerationResult) error {
+	// Generate main application file
+	mainFile := GeneratedFile{
+		Path:     "main.go",
+		Type:     "source",
+		Language: "go",
+		Template: "gin_main",
+		Content:  a.generateGinMain(req.Spec),
+	}
+	result.Files = append(result.Files, mainFile)
+
+	// Generate models
+	if len(req.Spec.Data.Entities) > 0 {
+		modelsFile := GeneratedFile{
+			Path:     "models/models.go",
+			Type:     "source",
+			Language: "go",
+			Template: "gin_models",
+			Content:  a.generateGinModels(req.Spec),
+		}
+		result.Files = append(result.Files, modelsFile)
+	}
+
+	// Generate API handlers
+	if len(req.Spec.API.Endpoints) > 0 {
+		handlersFile := GeneratedFile{
+			Path:     "handlers/handlers.go",
+			Type:     "source",
+			Language: "go",
+			Template: "gin_handlers",
+			Content:  a.generateGinHandlers(req.Spec),
+		}
+		result.Files = append(result.Files, handlersFile)
+	}
+
+	// Generate go.mod
+	goModFile := GeneratedFile{
+		Path:     "go.mod",
+		Type:     "config",
+		Language: "text",
+		Template: "go_mod",
+		Content:  a.generateGoMod(req.Spec),
+	}
+	result.Files = append(result.Files, goModFile)
+
+	// Generate README
+	readmeFile := GeneratedFile{
+		Path:     "README.md",
+		Type:     "documentation",
+		Language: "markdown",
+		Template: "gin_readme",
+		Content:  a.generateGinReadme(req.Spec),
+	}
+	result.Files = append(result.Files, readmeFile)
+
+	return nil
+}
+
+// generateEchoBackend generates Echo-specific Go backend code
+func (a *BackendAgent) generateEchoBackend(req *GenerationRequest, result *GenerationResult) error {
+	result.Warnings = append(result.Warnings, "Echo backend generation not yet implemented")
+	return nil
+}
+
+// generateFiberBackend generates Fiber-specific Go backend code
+func (a *BackendAgent) generateFiberBackend(req *GenerationRequest, result *GenerationResult) error {
+	result.Warnings = append(result.Warnings, "Fiber backend generation not yet implemented")
+	return nil
+}
+
+// generateGinMain generates the main Go application file for Gin
+func (a *BackendAgent) generateGinMain(spec *ir.IRSpec) string {
+	return fmt.Sprintf(`package main
+
+import (
+	"net/http"
+	"log"
+	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-contrib/cors"
+)
+
+func main() {
+	// Create Gin router
+	r := gin.Default()
+
+	// Add CORS middleware
+	config := cors.DefaultConfig()
+	config.AllowAllOrigins = true
+	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
+	r.Use(cors.New(config))
+
+	// Health check endpoint
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "healthy",
+			"service": "%s",
+			"version": "1.0.0",
+		})
+	})
+
+	// API routes
+	api := r.Group("/api/v1")
+	{
+		// TODO: Add your API routes here
+		api.GET("/", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "%s API",
+				"version": "1.0.0",
+			})
+		})
+	}
+
+	// Get port from environment or default to 8080
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("Starting %s on port %%s", port)
+	log.Fatal(r.Run(":" + port))
+}
+`, spec.App.Name, spec.App.Name, spec.App.Name)
+}
+
+// generateGinModels generates Go struct models for Gin
+func (a *BackendAgent) generateGinModels(spec *ir.IRSpec) string {
+	var models strings.Builder
+
+	models.WriteString(`package models
+
+import (
+	"time"
+	"gorm.io/gorm"
+)
+
+`)
+
+	for _, entity := range spec.Data.Entities {
+		models.WriteString(fmt.Sprintf("type %s struct {\n", entity.Name))
+		models.WriteString("\tgorm.Model\n")
+
+		for _, field := range entity.Fields {
+			goType := a.convertToGoType(field.Type)
+			tag := fmt.Sprintf("`json:\"%s\" gorm:\"%s\"`", field.Name, field.Name)
+
+			if !field.Required && goType != "string" {
+				goType = "*" + goType
+			}
+
+			models.WriteString(fmt.Sprintf("\t%s %s %s\n",
+				strings.Title(field.Name), goType, tag))
+		}
+		models.WriteString("}\n\n")
+	}
+
+	return models.String()
+}
+
+// generateGinHandlers generates API handlers for Gin
+func (a *BackendAgent) generateGinHandlers(spec *ir.IRSpec) string {
+	var handlers strings.Builder
+
+	handlers.WriteString(`package handlers
+
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+)
+
+`)
+
+	// Generate CRUD handlers for each entity
+	for _, entity := range spec.Data.Entities {
+		entityLower := strings.ToLower(entity.Name)
+
+		handlers.WriteString(fmt.Sprintf("// Get%s handles GET /%s/:id\nfunc Get%s(c *gin.Context) {\n\tid := c.Param(\"id\")\n\t// TODO: Implement get %s by ID\n\tc.JSON(http.StatusOK, gin.H{\n\t\t\"id\": id,\n\t\t\"message\": \"Get %s by ID\",\n\t})\n}\n\n", entity.Name, entityLower, entity.Name, entityLower, entity.Name))
+		handlers.WriteString(fmt.Sprintf("// List%s handles GET /%s\nfunc List%s(c *gin.Context) {\n\t// TODO: Implement list %s\n\tc.JSON(http.StatusOK, gin.H{\n\t\t\"data\": []interface{}{},\n\t\t\"message\": \"List %s\",\n\t})\n}\n\n", entity.Name, entityLower, entity.Name, entityLower, entity.Name))
+		handlers.WriteString(fmt.Sprintf("// Create%s handles POST /%s\nfunc Create%s(c *gin.Context) {\n\t// TODO: Implement create %s\n\tc.JSON(http.StatusCreated, gin.H{\n\t\t\"message\": \"Create %s\",\n\t})\n}\n\n", entity.Name, entityLower, entity.Name, entityLower, entity.Name))
+		handlers.WriteString(fmt.Sprintf("// Update%s handles PUT /%s/:id\nfunc Update%s(c *gin.Context) {\n\tid := c.Param(\"id\")\n\t// TODO: Implement update %s\n\tc.JSON(http.StatusOK, gin.H{\n\t\t\"id\": id,\n\t\t\"message\": \"Update %s\",\n\t})\n}\n\n", entity.Name, entityLower, entity.Name, entityLower, entity.Name))
+		handlers.WriteString(fmt.Sprintf("// Delete%s handles DELETE /%s/:id\nfunc Delete%s(c *gin.Context) {\n\tid := c.Param(\"id\")\n\t// TODO: Implement delete %s\n\tc.JSON(http.StatusOK, gin.H{\n\t\t\"id\": id,\n\t\t\"message\": \"Delete %s\",\n\t})\n}\n\n", entity.Name, entityLower, entity.Name, entityLower, entity.Name))
+	}
+
+	return handlers.String()
+}
+
+// generateGoMod generates go.mod file
+func (a *BackendAgent) generateGoMod(spec *ir.IRSpec) string {
+	moduleName := strings.ToLower(strings.ReplaceAll(spec.App.Name, " ", "-"))
+	return fmt.Sprintf("module %s\n\ngo 1.21\n\nrequire (\n\tgithub.com/gin-contrib/cors v1.4.0\n\tgithub.com/gin-gonic/gin v1.9.1\n\tgorm.io/gorm v1.25.4\n\tgorm.io/driver/postgres v1.5.2\n)\n", moduleName)
+}
+
+// generateGinReadme generates README.md for Gin backend
+func (a *BackendAgent) generateGinReadme(spec *ir.IRSpec) string {
+	return fmt.Sprintf("# %s\n\n%s\n\n## Getting Started\n\n### Prerequisites\n\n- Go 1.21 or higher\n- PostgreSQL (optional)\n\n### Installation\n\n1. Install dependencies:\n   ```bash\n   go mod download\n   ```\n\n2. Run the application:\n   ```bash\n   go run main.go\n   ```\n\nThe server will start on http://localhost:8080\n\n### API Endpoints\n\n- `GET /health` - Health check\n- `GET /api/v1/` - API information\n\n### Environment Variables\n\n- `PORT` - Server port (default: 8080)\n- `DATABASE_URL` - PostgreSQL connection string (optional)\n\n## Generated by QuantumLayer Factory\n\nThis backend was automatically generated using QuantumLayer Factory.\n", spec.App.Name, spec.App.Description)
+}
+
+// convertToGoType converts IR types to Go types
+func (a *BackendAgent) convertToGoType(irType string) string {
+	switch irType {
+	case "string", "text":
+		return "string"
+	case "int", "integer":
+		return "int"
+	case "float", "number":
+		return "float64"
+	case "bool", "boolean":
+		return "bool"
+	case "datetime", "timestamp":
+		return "time.Time"
+	case "uuid":
+		return "string"
+	case "email":
+		return "string"
+	case "url":
+		return "string"
+	case "json":
+		return "interface{}"
+	default:
+		return "string"
+	}
 }

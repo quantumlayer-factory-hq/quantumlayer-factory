@@ -24,6 +24,26 @@ You are a specialized backend code generation agent. Your expertise lies in crea
 - **{{.Name}}** ({{.Priority}}): {{.Description}}
 {{- end}}
 
+## Data Model Specification
+
+**CRITICAL: You MUST implement EXACTLY the entities defined in the IR specification below. Do NOT add extra entities like users, orders, or audit logs unless explicitly defined in the IR spec.**
+
+### Required Entities
+{{- range .Data.Entities}}
+**{{.Name}}** ({{.Description}}):
+{{- range .Fields}}
+- {{.Name}}: {{.Type}}{{if .Required}} (Required){{end}}{{if .Unique}} (Unique){{end}}
+{{- end}}
+{{- end}}
+
+### Entity Relationships
+{{- range .Data.Relationships}}
+- {{.From}} → {{.To}} ({{.Type}}) via {{.ForeignKey}}
+{{- end}}
+
+### Authentication Configuration
+**CRITICAL: External authentication is configured. Do NOT create user tables or auth endpoints. Authentication is handled externally.**
+
 ## Requirements
 
 Create a well-structured backend application that includes:
@@ -121,6 +141,47 @@ Follow these coding standards:
 - Use context.Context for request lifecycle management
 - Include comprehensive unit tests with testify
 - Document public functions and types
+{{- if eq .Stack.Backend.Framework "gin"}}
+
+### Gin/Go Specific Requirements
+- **Separate file structure**: main.go, models/models.go, handlers/handlers.go, services/services.go, repositories/repositories.go, config/config.go, middleware/auth.go
+- **Gin router**: Use gin.Default() with proper middleware setup
+- **CORS configuration**: Use gin-contrib/cors for cross-origin requests
+- **Model definitions**: Use GORM for database ORM with proper struct tags
+- **Handler pattern**: Implement clean handler functions with gin.Context
+- **Service layer**: Separate business logic from HTTP handling
+- **Repository pattern**: Database access layer with interfaces
+- **Configuration**: Use environment variables with os.Getenv
+- **Authentication**: JWT token validation with gin middleware
+- **Error handling**: Consistent error response format with gin.H
+- **Health checks**: Implement /health endpoint for monitoring
+- **API versioning**: Use gin.Group("/api/v1") for version management
+- **Input validation**: Validate request payloads with struct tags
+- **Database migrations**: Include SQL migration scripts
+- **Logging**: Use structured logging with proper levels
+
+### CRITICAL Go/Gin Requirements
+- **Router Structure**: Create separate route groups for different resources
+- **Import Organization**: Group imports properly (standard, third-party, local)
+- **Struct Tags**: Include both json and gorm tags for all model fields
+- **Middleware Chain**: Proper middleware ordering (CORS, auth, logging)
+- **Context Usage**: Pass context.Context through service layers
+- **Error Types**: Define custom error types for different scenarios
+- **Database Consistency**: Ensure GORM models match SQL schema exactly
+- **PostgreSQL Integration**: Use gorm.io/driver/postgres driver
+- **Password Security**: Use bcrypt for password hashing
+- **JWT Implementation**: Use golang-jwt/jwt for token generation/validation
+- **Complete Handlers**: Include all CRUD operations with proper HTTP methods
+
+### CRITICAL Go/Gin File Completeness Requirements
+- **go.mod**: MUST include proper module name and ALL dependencies
+- **All struct types**: Define RegisterInput, LoginInput, UpdateUserInput request structs
+- **All functions**: Implement LoadConfig, InitRoutes, GenerateJWTToken, RunMigrations
+- **Type consistency**: Ensure all types match between files (no interface mismatches)
+- **Complete imports**: Import ALL required packages, remove unused imports
+- **Working compilation**: Generated code MUST compile without errors using 'go build'
+- **Runtime ready**: Generated code MUST run without panics or missing implementations
+{{- end}}
 {{- else if eq .Stack.Backend.Language "python"}}
 - Follow PEP 8 style guidelines
 - Use type hints for function signatures
@@ -194,9 +255,16 @@ Follow these coding standards:
 
 **CRITICAL: You MUST provide complete, runnable code for ALL files listed in the file section. Do NOT generate placeholder comments or skeleton code. Every file must contain fully functional implementation.**
 
-**MANDATORY: The response must include EXACTLY 11 diff sections for FastAPI projects - one for each file listed. Missing ANY file will cause system failure.**
+**MANDATORY: The response must include EXACTLY the correct number of diff sections for each tech stack - one for each file listed. Missing ANY file will cause system failure.**
 
-**CRITICAL FILE LIST REQUIREMENT: You MUST list ALL 11 files in the file section before any diff content. Do NOT start diff content until ALL files are listed.**
+**CRITICAL FILE LIST REQUIREMENT: You MUST list ALL files in the file section before any diff content. Do NOT start diff content until ALL files are listed.**
+
+**DIFF FORMAT REQUIREMENTS: When generating diffs, ensure proper unified diff format:**
+- Each file MUST start with `--- a/filename` and `+++ b/filename` headers
+- Use `@@ -0,0 +1,N @@` hunk headers where N is the number of lines
+- Prefix all new content lines with `+` (plus sign and space)
+- Do NOT mix prefixed and unprefixed lines within the same file
+- Each file's content must be complete and runnable
 
 Your ENTIRE response must follow this EXACT structure:
 
@@ -214,6 +282,17 @@ Your ENTIRE response must follow this EXACT structure:
 - file: database.py
 - file: config.py
 - file: requirements.txt
+{{- else if and (eq .Stack.Backend.Language "go") (eq .Stack.Backend.Framework "gin")}}
+- file: main.go
+- file: models/models.go
+- file: handlers/handlers.go
+- file: services/services.go
+- file: repositories/repositories.go
+- file: config/config.go
+- file: middleware/auth.go
+- file: api/openapi.yaml
+- file: go.mod
+- file: go.sum
 {{- else}}
 - file: main.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
 - file: models.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
@@ -281,54 +360,944 @@ Your ENTIRE response must follow this EXACT structure:
 +++ b/requirements.txt
 @@ -0,0 +1,F @@
 +[All FastAPI dependencies including passlib, email-validator, python-jose[cryptography], python-multipart]
-{{- else}}
---- a/models.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
-+++ b/models.{{if eq .Stack.Backend.Language "go"}}go{{else if eq .Stack.Backend.Language "python"}}py{{else if eq .Stack.Backend.Language "javascript"}}js{{else}}py{{end}}
-@@ -0,0 +1,Y @@
-+[COMPLETE RUNNABLE CODE HERE]
+{{- else if and (eq .Stack.Backend.Language "go") (eq .Stack.Backend.Framework "gin")}}
+--- a/main.go
++++ b/main.go
+@@ -0,0 +1,X @@
++// {{.App.Name}} - Inventory Management API with External Authentication
++// This application uses external authentication - no user management endpoints
++package main
++
++import (
++	"log"
++	"net/http"
++	"os"
++
++	"github.com/gin-contrib/cors"
++	"github.com/gin-gonic/gin"
++	"{{.App.Name}}/config"
++	"{{.App.Name}}/handlers"
++	"{{.App.Name}}/middleware"
++	"{{.App.Name}}/repositories"
++	"{{.App.Name}}/services"
++)
++
++func main() {
++	// Load configuration
++	cfg := config.LoadConfig()
++
++	// Initialize database
++	db := config.InitDatabase(cfg)
++
++	// Initialize repositories
++{{- range .Data.Entities}}
++	{{.Name}}Repo := repositories.New{{.Name}}Repository(db)
++{{- end}}
++
++	// Initialize services
++{{- range .Data.Entities}}
++	{{.Name}}Service := services.New{{.Name}}Service({{.Name}}Repo)
++{{- end}}
++
++	// Initialize handlers
++{{- range .Data.Entities}}
++	{{.Name}}Handler := handlers.New{{.Name}}Handler({{.Name}}Service)
++{{- end}}
++
++	// Setup Gin router
++	r := gin.New()
++	r.Use(gin.Logger())
++	r.Use(gin.Recovery())
++
++	// Configure CORS
++	corsConfig := cors.DefaultConfig()
++	corsConfig.AllowAllOrigins = true
++	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
++	r.Use(cors.New(corsConfig))
++
++	// Health check endpoint
++	r.GET("/health", func(c *gin.Context) {
++		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
++	})
++
++	// API v1 routes with external auth middleware
++	v1 := r.Group("/api/v1")
++	v1.Use(middleware.ExternalAuthMiddleware(cfg.Auth.Issuer))
++	{
++{{- range .Data.Entities}}
++		{{.Name}}Group := v1.Group("/{{.Name}}s")
++		{
++			{{.Name}}Group.GET("", {{.Name}}Handler.List{{.Name}}s)
++			{{.Name}}Group.POST("", {{.Name}}Handler.Create{{.Name}})
++			{{.Name}}Group.GET("/:id", {{.Name}}Handler.Get{{.Name}})
++			{{.Name}}Group.PUT("/:id", {{.Name}}Handler.Update{{.Name}})
++			{{.Name}}Group.DELETE("/:id", {{.Name}}Handler.Delete{{.Name}})
++		}
++{{- end}}
++	}
++
++	// Start server
++	port := os.Getenv("PORT")
++	if port == "" {
++		port = "8080"
++	}
++
++	log.Printf("Starting server on port %s...", port)
++	if err := r.Run(":" + port); err != nil {
++		log.Fatal("Failed to start server:", err)
++	}
++}
++{{- else}}
++// {{.App.Name}} - Inventory Management API with Internal Authentication
++package main
++
++import (
++	"log"
++	"net/http"
++	"os"
++
++	"github.com/gin-contrib/cors"
++	"github.com/gin-gonic/gin"
++	"{{.App.Name}}/config"
++	"{{.App.Name}}/handlers"
++	"{{.App.Name}}/middleware"
++	"{{.App.Name}}/repositories"
++	"{{.App.Name}}/services"
++)
++
++func main() {
++	// Load configuration
++	cfg := config.LoadConfig()
++
++	// Initialize database
++	db := config.InitDatabase(cfg)
++
++	// Run migrations
++	config.RunMigrations(db)
++
++	// Initialize repositories
++	userRepo := repositories.NewUserRepository(db)
++{{- range .Data.Entities}}
++	{{.Name}}Repo := repositories.New{{.Name}}Repository(db)
++{{- end}}
++
++	// Initialize services
++	userService := services.NewUserService(userRepo)
++{{- range .Data.Entities}}
++	{{.Name}}Service := services.New{{.Name}}Service({{.Name}}Repo)
++{{- end}}
++
++	// Initialize handlers
++	authHandler := handlers.NewAuthHandler(userService)
++{{- range .Data.Entities}}
++	{{.Name}}Handler := handlers.New{{.Name}}Handler({{.Name}}Service)
++{{- end}}
++
++	// Setup Gin router
++	r := gin.New()
++	r.Use(gin.Logger())
++	r.Use(gin.Recovery())
++
++	// Configure CORS
++	corsConfig := cors.DefaultConfig()
++	corsConfig.AllowAllOrigins = true
++	corsConfig.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
++	r.Use(cors.New(corsConfig))
++
++	// Health check endpoint
++	r.GET("/health", func(c *gin.Context) {
++		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
++	})
++
++	// Auth routes (no middleware)
++	auth := r.Group("/api/v1/auth")
++	{
++		auth.POST("/register", authHandler.Register)
++		auth.POST("/login", authHandler.Login)
++	}
++
++	// Protected API v1 routes
++	v1 := r.Group("/api/v1")
++	v1.Use(middleware.JWTAuthMiddleware())
++	{
++		v1.GET("/me", authHandler.GetProfile)
++{{- range .Data.Entities}}
++		{{.Name}}Group := v1.Group("/{{.Name}}s")
++		{
++			{{.Name}}Group.GET("", {{.Name}}Handler.List{{.Name}}s)
++			{{.Name}}Group.POST("", {{.Name}}Handler.Create{{.Name}})
++			{{.Name}}Group.GET("/:id", {{.Name}}Handler.Get{{.Name}})
++			{{.Name}}Group.PUT("/:id", {{.Name}}Handler.Update{{.Name}})
++			{{.Name}}Group.DELETE("/:id", {{.Name}}Handler.Delete{{.Name}})
++		}
++{{- end}}
++	}
++
++	// Start server
++	port := os.Getenv("PORT")
++	if port == "" {
++		port = "8080"
++	}
++
++	log.Printf("Starting server on port %s...", port)
++	if err := r.Run(":" + port); err != nil {
++		log.Fatal("Failed to start server:", err)
++	}
++}
++{{- end}}
 
-{{- if eq .Stack.Backend.Language "python"}}
---- a/requirements.txt
-+++ b/requirements.txt
-@@ -0,0 +1,Z @@
-+[COMPLETE DEPENDENCIES HERE]
-{{- else if eq .Stack.Backend.Language "javascript"}}
---- a/package.json
-+++ b/package.json
-@@ -0,0 +1,Z @@
-+[COMPLETE PACKAGE CONFIG HERE]
-{{- else if eq .Stack.Backend.Language "go"}}
---- a/go.mod
-+++ b/go.mod
-@@ -0,0 +1,Z @@
-+[COMPLETE MODULE CONFIG HERE]
-{{- end}}
-{{- end}}
-```
+--- a/models/models.go
++++ b/models/models.go
+@@ -0,0 +1,X @@
++package models
++
++import (
++	"time"
++	"github.com/google/uuid"
++	"gorm.io/gorm"
++)
++
++{{- if ne .API.Auth.Issuer "external"}}
++// User represents a user in the system
++type User struct {
++	ID           uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
++	Email        string    `json:"email" gorm:"uniqueIndex;not null" binding:"required,email"`
++	PasswordHash string    `json:"-" gorm:"not null"`
++	FirstName    string    `json:"first_name" gorm:"not null" binding:"required"`
++	LastName     string    `json:"last_name" gorm:"not null" binding:"required"`
++	Role         string    `json:"role" gorm:"default:user"`
++	Active       bool      `json:"active" gorm:"default:true"`
++	CreatedAt    time.Time `json:"created_at"`
++	UpdatedAt    time.Time `json:"updated_at"`
++}
++
++// BeforeCreate sets UUID for user before creation
++func (u *User) BeforeCreate(tx *gorm.DB) error {
++	u.ID = uuid.New()
++	return nil
++}
++{{- end}}
++
++{{- range .Data.Entities}}
++// {{.Name}} represents {{.Description}}
++type {{.Name}} struct {
++	ID        uuid.UUID `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
++{{- range .Fields}}
++{{- if ne .Name "id"}}
++{{- if eq .Type "string"}}
++	{{.Name}} string `json:"{{.Name}}" gorm:"{{if .Required}}not null{{end}}{{if .Unique}};uniqueIndex{{end}}" {{if .Required}}binding:"required"{{end}}`
++{{- else if eq .Type "integer"}}
++	{{.Name}} int `json:"{{.Name}}" gorm:"{{if .Required}}not null{{end}}" {{if .Required}}binding:"required"{{end}}`
++{{- else if eq .Type "boolean"}}
++	{{.Name}} bool `json:"{{.Name}}" gorm:"default:false"`
++{{- else if eq .Type "date" }}
++	{{.Name}} time.Time `json:"{{.Name}}" gorm:"{{if .Required}}not null{{end}}"`
++{{- else if eq .Type "decimal" }}
++	{{.Name}} float64 `json:"{{.Name}}" gorm:"type:decimal(10,2);{{if .Required}}not null{{end}}" {{if .Required}}binding:"required"{{end}}`
++{{- end}}
++{{- end}}
++{{- end}}
++	CreatedAt time.Time `json:"created_at"`
++	UpdatedAt time.Time `json:"updated_at"`
++}
++
++// BeforeCreate sets UUID for {{.Name}} before creation
++func ({{.Name}} *{{.Name}}) BeforeCreate(tx *gorm.DB) error {
++	{{.Name}}.ID = uuid.New()
++	return nil
++}
++
++{{- end}}
+
+--- a/handlers/handlers.go
++++ b/handlers/handlers.go
+@@ -0,0 +1,X @@
++package handlers
++
++import (
++	"net/http"
++	"strconv"
++
++	"github.com/gin-gonic/gin"
++	"github.com/google/uuid"
++	"{{.App.Name}}/models"
++	"{{.App.Name}}/services"
++)
++
++{{- if ne .API.Auth.Issuer "external"}}
++// AuthHandler handles authentication endpoints
++type AuthHandler struct {
++	userService services.UserService
++}
++
++// NewAuthHandler creates a new auth handler
++func NewAuthHandler(userService services.UserService) *AuthHandler {
++	return &AuthHandler{userService: userService}
++}
++
++// RegisterRequest represents user registration request
++type RegisterRequest struct {
++	Email     string `json:"email" binding:"required,email"`
++	Password  string `json:"password" binding:"required,min=6"`
++	FirstName string `json:"first_name" binding:"required"`
++	LastName  string `json:"last_name" binding:"required"`
++}
++
++// LoginRequest represents user login request
++type LoginRequest struct {
++	Email    string `json:"email" binding:"required,email"`
++	Password string `json:"password" binding:"required"`
++}
++
++// Register handles user registration
++func (h *AuthHandler) Register(c *gin.Context) {
++	var req RegisterRequest
++	if err := c.ShouldBindJSON(&req); err != nil {
++		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
++		return
++	}
++
++	user, token, err := h.userService.RegisterUser(req.Email, req.Password, req.FirstName, req.LastName)
++	if err != nil {
++		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
++		return
++	}
++
++	c.JSON(http.StatusCreated, gin.H{
++		"user":  user,
++		"token": token,
++	})
++}
++
++// Login handles user authentication
++func (h *AuthHandler) Login(c *gin.Context) {
++	var req LoginRequest
++	if err := c.ShouldBindJSON(&req); err != nil {
++		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
++		return
++	}
++
++	user, token, err := h.userService.AuthenticateUser(req.Email, req.Password)
++	if err != nil {
++		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
++		return
++	}
++
++	c.JSON(http.StatusOK, gin.H{
++		"user":  user,
++		"token": token,
++	})
++}
++
++// GetProfile returns current user profile
++func (h *AuthHandler) GetProfile(c *gin.Context) {
++	userID := c.GetString("user_id")
++	user, err := h.userService.GetUserByID(userID)
++	if err != nil {
++		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
++		return
++	}
++
++	c.JSON(http.StatusOK, user)
++}
++{{- end}}
++
++{{- range .Data.Entities}}
++// {{.Name}}Handler handles {{.Name}} endpoints
++type {{.Name}}Handler struct {
++	service services.{{.Name}}Service
++}
++
++// New{{.Name}}Handler creates a new {{.Name}} handler
++func New{{.Name}}Handler(service services.{{.Name}}Service) *{{.Name}}Handler {
++	return &{{.Name}}Handler{service: service}
++}
++
++// List{{.Name}}s returns all {{.Name}}s
++func (h *{{.Name}}Handler) List{{.Name}}s(c *gin.Context) {
++	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
++	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
++
++	{{.Name}}s, total, err := h.service.List{{.Name}}s(page, limit)
++	if err != nil {
++		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
++		return
++	}
++
++	c.JSON(http.StatusOK, gin.H{
++		"data":  {{.Name}}s,
++		"total": total,
++		"page":  page,
++		"limit": limit,
++	})
++}
++
++// Get{{.Name}} returns a single {{.Name}} by ID
++func (h *{{.Name}}Handler) Get{{.Name}}(c *gin.Context) {
++	id := c.Param("id")
++	uuid, err := uuid.Parse(id)
++	if err != nil {
++		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
++		return
++	}
++
++	{{.Name}}, err := h.service.Get{{.Name}}ByID(uuid)
++	if err != nil {
++		c.JSON(http.StatusNotFound, gin.H{"error": "{{.Name}} not found"})
++		return
++	}
++
++	c.JSON(http.StatusOK, {{.Name}})
++}
++
++// Create{{.Name}} creates a new {{.Name}}
++func (h *{{.Name}}Handler) Create{{.Name}}(c *gin.Context) {
++	var {{.Name}} models.{{.Name}}
++	if err := c.ShouldBindJSON(&{{.Name}}); err != nil {
++		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
++		return
++	}
++
++	created{{.Name}}, err := h.service.Create{{.Name}}(&{{.Name}})
++	if err != nil {
++		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
++		return
++	}
++
++	c.JSON(http.StatusCreated, created{{.Name}})
++}
++
++// Update{{.Name}} updates an existing {{.Name}}
++func (h *{{.Name}}Handler) Update{{.Name}}(c *gin.Context) {
++	id := c.Param("id")
++	uuid, err := uuid.Parse(id)
++	if err != nil {
++		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
++		return
++	}
++
++	var {{.Name}} models.{{.Name}}
++	if err := c.ShouldBindJSON(&{{.Name}}); err != nil {
++		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
++		return
++	}
++
++	{{.Name}}.ID = uuid
++	updated{{.Name}}, err := h.service.Update{{.Name}}(&{{.Name}})
++	if err != nil {
++		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
++		return
++	}
++
++	c.JSON(http.StatusOK, updated{{.Name}})
++}
++
++// Delete{{.Name}} deletes a {{.Name}} by ID
++func (h *{{.Name}}Handler) Delete{{.Name}}(c *gin.Context) {
++	id := c.Param("id")
++	uuid, err := uuid.Parse(id)
++	if err != nil {
++		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
++		return
++	}
++
++	if err := h.service.Delete{{.Name}}(uuid); err != nil {
++		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
++		return
++	}
++
++	c.JSON(http.StatusNoContent, nil)
++}
++
++{{- end}}
+
+--- a/services/services.go
++++ b/services/services.go
+@@ -0,0 +1,X @@
++package services
++
++import (
++	"errors"
++	"time"
++
++	"github.com/google/uuid"
++	"golang.org/x/crypto/bcrypt"
++	"{{.App.Name}}/models"
++	"{{.App.Name}}/repositories"
++	"{{.App.Name}}/config"
++)
++
++{{- if ne .API.Auth.Issuer "external"}}
++// UserService handles user business logic
++type UserService interface {
++	RegisterUser(email, password, firstName, lastName string) (*models.User, string, error)
++	AuthenticateUser(email, password string) (*models.User, string, error)
++	GetUserByID(id string) (*models.User, error)
++	GetUserByEmail(email string) (*models.User, error)
++}
++
++type userService struct {
++	repo repositories.UserRepository
++}
++
++// NewUserService creates a new user service
++func NewUserService(repo repositories.UserRepository) UserService {
++	return &userService{repo: repo}
++}
++
++// RegisterUser creates a new user account
++func (s *userService) RegisterUser(email, password, firstName, lastName string) (*models.User, string, error) {
++	// Check if user already exists
++	existing, _ := s.repo.FindByEmail(email)
++	if existing != nil {
++		return nil, "", errors.New("user already exists")
++	}
++
++	// Hash password
++	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
++	if err != nil {
++		return nil, "", err
++	}
++
++	// Create user
++	user := &models.User{
++		Email:        email,
++		PasswordHash: string(hashedPassword),
++		FirstName:    firstName,
++		LastName:     lastName,
++		Role:         "user",
++		Active:       true,
++	}
++
++	createdUser, err := s.repo.Create(user)
++	if err != nil {
++		return nil, "", err
++	}
++
++	// Generate JWT token
++	token, err := config.GenerateJWTToken(createdUser.ID.String(), createdUser.Email, createdUser.Role)
++	if err != nil {
++		return nil, "", err
++	}
++
++	return createdUser, token, nil
++}
++
++// AuthenticateUser validates credentials and returns user with token
++func (s *userService) AuthenticateUser(email, password string) (*models.User, string, error) {
++	user, err := s.repo.FindByEmail(email)
++	if err != nil {
++		return nil, "", errors.New("invalid credentials")
++	}
++
++	if !user.Active {
++		return nil, "", errors.New("account is deactivated")
++	}
++
++	// Verify password
++	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
++	if err != nil {
++		return nil, "", errors.New("invalid credentials")
++	}
++
++	// Generate JWT token
++	token, err := config.GenerateJWTToken(user.ID.String(), user.Email, user.Role)
++	if err != nil {
++		return nil, "", err
++	}
++
++	return user, token, nil
++}
++
++// GetUserByID retrieves user by ID
++func (s *userService) GetUserByID(id string) (*models.User, error) {
++	uuid, err := uuid.Parse(id)
++	if err != nil {
++		return nil, errors.New("invalid ID format")
++	}
++
++	return s.repo.FindByID(uuid)
++}
++
++// GetUserByEmail retrieves user by email
++func (s *userService) GetUserByEmail(email string) (*models.User, error) {
++	return s.repo.FindByEmail(email)
++}
++{{- end}}
++
++{{- range .Data.Entities}}
++// {{.Name}}Service handles {{.Name}} business logic
++type {{.Name}}Service interface {
++	List{{.Name}}s(page, limit int) ([]*models.{{.Name}}, int64, error)
++	Get{{.Name}}ByID(id uuid.UUID) (*models.{{.Name}}, error)
++	Create{{.Name}}({{.Name}} *models.{{.Name}}) (*models.{{.Name}}, error)
++	Update{{.Name}}({{.Name}} *models.{{.Name}}) (*models.{{.Name}}, error)
++	Delete{{.Name}}(id uuid.UUID) error
++}
++
++type {{.Name}}Service struct {
++	repo repositories.{{.Name}}Repository
++}
++
++// New{{.Name}}Service creates a new {{.Name}} service
++func New{{.Name}}Service(repo repositories.{{.Name}}Repository) {{.Name}}Service {
++	return &{{.Name}}Service{repo: repo}
++}
++
++// List{{.Name}}s returns paginated {{.Name}}s
++func (s *{{.Name}}Service) List{{.Name}}s(page, limit int) ([]*models.{{.Name}}, int64, error) {
++	offset := (page - 1) * limit
++	return s.repo.FindAll(limit, offset)
++}
++
++// Get{{.Name}}ByID returns a {{.Name}} by ID
++func (s *{{.Name}}Service) Get{{.Name}}ByID(id uuid.UUID) (*models.{{.Name}}, error) {
++	return s.repo.FindByID(id)
++}
++
++// Create{{.Name}} creates a new {{.Name}}
++func (s *{{.Name}}Service) Create{{.Name}}({{.Name}} *models.{{.Name}}) (*models.{{.Name}}, error) {
++	return s.repo.Create({{.Name}})
++}
++
++// Update{{.Name}} updates an existing {{.Name}}
++func (s *{{.Name}}Service) Update{{.Name}}({{.Name}} *models.{{.Name}}) (*models.{{.Name}}, error) {
++	return s.repo.Update({{.Name}})
++}
++
++// Delete{{.Name}} deletes a {{.Name}} by ID
++func (s *{{.Name}}Service) Delete{{.Name}}(id uuid.UUID) error {
++	return s.repo.Delete(id)
++}
++
++{{- end}}
+
+--- a/repositories/repositories.go
++++ b/repositories/repositories.go
+@@ -0,0 +1,X @@
++package repositories
++
++import (
++	"github.com/google/uuid"
++	"gorm.io/gorm"
++	"{{.App.Name}}/models"
++)
++
++{{- if ne .API.Auth.Issuer "external"}}
++// UserRepository handles user data operations
++type UserRepository interface {
++	Create(user *models.User) (*models.User, error)
++	FindByID(id uuid.UUID) (*models.User, error)
++	FindByEmail(email string) (*models.User, error)
++	Update(user *models.User) (*models.User, error)
++	Delete(id uuid.UUID) error
++}
++
++type userRepository struct {
++	db *gorm.DB
++}
++
++// NewUserRepository creates a new user repository
++func NewUserRepository(db *gorm.DB) UserRepository {
++	return &userRepository{db: db}
++}
++
++// Create creates a new user
++func (r *userRepository) Create(user *models.User) (*models.User, error) {
++	err := r.db.Create(user).Error
++	return user, err
++}
++
++// FindByID finds user by ID
++func (r *userRepository) FindByID(id uuid.UUID) (*models.User, error) {
++	var user models.User
++	err := r.db.Where("id = ?", id).First(&user).Error
++	return &user, err
++}
++
++// FindByEmail finds user by email
++func (r *userRepository) FindByEmail(email string) (*models.User, error) {
++	var user models.User
++	err := r.db.Where("email = ?", email).First(&user).Error
++	return &user, err
++}
++
++// Update updates user
++func (r *userRepository) Update(user *models.User) (*models.User, error) {
++	err := r.db.Save(user).Error
++	return user, err
++}
++
++// Delete deletes user by ID
++func (r *userRepository) Delete(id uuid.UUID) error {
++	return r.db.Delete(&models.User{}, id).Error
++}
++{{- end}}
++
++{{- range .Data.Entities}}
++// {{.Name}}Repository handles {{.Name}} data operations
++type {{.Name}}Repository interface {
++	FindAll(limit, offset int) ([]*models.{{.Name}}, int64, error)
++	FindByID(id uuid.UUID) (*models.{{.Name}}, error)
++	Create({{.Name}} *models.{{.Name}}) (*models.{{.Name}}, error)
++	Update({{.Name}} *models.{{.Name}}) (*models.{{.Name}}, error)
++	Delete(id uuid.UUID) error
++}
++
++type {{.Name}}Repository struct {
++	db *gorm.DB
++}
++
++// New{{.Name}}Repository creates a new {{.Name}} repository
++func New{{.Name}}Repository(db *gorm.DB) {{.Name}}Repository {
++	return &{{.Name}}Repository{db: db}
++}
++
++// FindAll returns paginated {{.Name}}s
++func (r *{{.Name}}Repository) FindAll(limit, offset int) ([]*models.{{.Name}}, int64, error) {
++	var {{.Name}}s []*models.{{.Name}}
++	var total int64
++
++	err := r.db.Model(&models.{{.Name}}{}).Count(&total).Error
++	if err != nil {
++		return nil, 0, err
++	}
++
++	err = r.db.Limit(limit).Offset(offset).Find(&{{.Name}}s).Error
++	return {{.Name}}s, total, err
++}
++
++// FindByID finds {{.Name}} by ID
++func (r *{{.Name}}Repository) FindByID(id uuid.UUID) (*models.{{.Name}}, error) {
++	var {{.Name}} models.{{.Name}}
++	err := r.db.Where("id = ?", id).First(&{{.Name}}).Error
++	return &{{.Name}}, err
++}
++
++// Create creates a new {{.Name}}
++func (r *{{.Name}}Repository) Create({{.Name}} *models.{{.Name}}) (*models.{{.Name}}, error) {
++	err := r.db.Create({{.Name}}).Error
++	return {{.Name}}, err
++}
++
++// Update updates {{.Name}}
++func (r *{{.Name}}Repository) Update({{.Name}} *models.{{.Name}}) (*models.{{.Name}}, error) {
++	err := r.db.Save({{.Name}}).Error
++	return {{.Name}}, err
++}
++
++// Delete deletes {{.Name}} by ID
++func (r *{{.Name}}Repository) Delete(id uuid.UUID) error {
++	return r.db.Delete(&models.{{.Name}}{}, id).Error
++}
++
++{{- end}}
+
+--- a/config/config.go
++++ b/config/config.go
+@@ -0,0 +1,X @@
++package config
++
++import (
++	"fmt"
++	"log"
++	"os"
++	"time"
++
++	"github.com/golang-jwt/jwt/v5"
++	"gorm.io/driver/postgres"
++	"gorm.io/gorm"
++	"{{.App.Name}}/models"
++)
++
++// Config holds application configuration
++type Config struct {
++	Database DatabaseConfig `json:"database"`
++	JWT      JWTConfig      `json:"jwt"`
++	Auth     AuthConfig     `json:"auth"`
++	Server   ServerConfig   `json:"server"`
++}
++
++// DatabaseConfig holds database configuration
++type DatabaseConfig struct {
++	Host     string `json:"host"`
++	Port     string `json:"port"`
++	User     string `json:"user"`
++	Password string `json:"password"`
++	DBName   string `json:"db_name"`
++	SSLMode  string `json:"ssl_mode"`
++}
++
++// JWTConfig holds JWT configuration
++type JWTConfig struct {
++	Secret    string        `json:"secret"`
++	ExpiresIn time.Duration `json:"expires_in"`
++}
++
++// AuthConfig holds authentication configuration
++type AuthConfig struct {
++	Issuer string `json:"issuer"`
++}
++
++// ServerConfig holds server configuration
++type ServerConfig struct {
++	Port string `json:"port"`
++}
++
++// LoadConfig loads configuration from environment variables
++func LoadConfig() *Config {
++	return &Config{
++		Database: DatabaseConfig{
++			Host:     getEnv("DB_HOST", "localhost"),
++			Port:     getEnv("DB_PORT", "5432"),
++			User:     getEnv("DB_USER", "postgres"),
++			Password: getEnv("DB_PASSWORD", "postgres"),
++			DBName:   getEnv("DB_NAME", "{{.App.Name}}"),
++			SSLMode:  getEnv("DB_SSL_MODE", "disable"),
++		},
++		JWT: JWTConfig{
++			Secret:    getEnv("JWT_SECRET", "your-256-bit-secret"),
++			ExpiresIn: 24 * time.Hour,
++		},
++		Auth: AuthConfig{
++			Issuer: "{{.API.Auth.Issuer}}",
++		},
++		Server: ServerConfig{
++			Port: getEnv("PORT", "8080"),
++		},
++	}
++}
++
++// InitDatabase initializes database connection
++func InitDatabase(cfg *Config) *gorm.DB {
++	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
++		cfg.Database.Host,
++		cfg.Database.User,
++		cfg.Database.Password,
++		cfg.Database.DBName,
++		cfg.Database.Port,
++		cfg.Database.SSLMode,
++	)
++
++	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
++	if err != nil {
++		log.Fatal("Failed to connect to database:", err)
++	}
++
++	return db
++}
++
++// RunMigrations runs database migrations
++func RunMigrations(db *gorm.DB) {
++	err := db.AutoMigrate(
++{{- if ne .API.Auth.Issuer "external"}}
++		&models.User{},
++{{- end}}
++{{- range .Data.Entities}}
++		&models.{{.Name}}{},
++{{- end}}
++	)
++	if err != nil {
++		log.Fatal("Failed to run migrations:", err)
++	}
++}
++
++{{- if ne .API.Auth.Issuer "external"}}
++// GenerateJWTToken generates a JWT token for user
++func GenerateJWTToken(userID, email, role string) (string, error) {
++	claims := jwt.MapClaims{
++		"user_id": userID,
++		"email":   email,
++		"role":    role,
++		"exp":     time.Now().Add(24 * time.Hour).Unix(),
++		"iat":     time.Now().Unix(),
++	}
++
++	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
++	secret := getEnv("JWT_SECRET", "your-256-bit-secret")
++	return token.SignedString([]byte(secret))
++}
++
++// ValidateJWTToken validates and parses JWT token
++func ValidateJWTToken(tokenString string) (jwt.MapClaims, error) {
++	secret := getEnv("JWT_SECRET", "your-256-bit-secret")
++	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
++		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
++			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
++		}
++		return []byte(secret), nil
++	})
++
++	if err != nil {
++		return nil, err
++	}
++
++	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
++		return claims, nil
++	}
++
++	return nil, fmt.Errorf("invalid token")
++}
++{{- end}}
++
++// getEnv gets environment variable with default value
++func getEnv(key, defaultValue string) string {
++	value := os.Getenv(key)
++	if value == "" {
++		return defaultValue
++	}
++	return value
++}
+
+--- a/middleware/auth.go
++++ b/middleware/auth.go
+@@ -0,0 +1,X @@
++package middleware
++
++import (
++	"net/http"
++	"strings"
++
++	"github.com/gin-gonic/gin"
++	"{{.App.Name}}/config"
++)
++
++// ExternalAuthMiddleware validates external authentication tokens
++func ExternalAuthMiddleware(issuer string) gin.HandlerFunc {
++	return func(c *gin.Context) {
++		// Get Authorization header
++		authHeader := c.GetHeader("Authorization")
++		if authHeader == "" {
++			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
++			c.Abort()
++			return
++		}
++
++		// Check Bearer token format
++		if !strings.HasPrefix(authHeader, "Bearer ") {
++			c.JSON(http.StatusUnauthorized, gin.H{"error": "Bearer token required"})
++			c.Abort()
++			return
++		}
++
++		token := strings.TrimPrefix(authHeader, "Bearer ")
++		if token == "" {
++			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token cannot be empty"})
++			c.Abort()
++			return
++		}
++
++		// TODO: Validate external token against issuer
++		// For now, we'll assume any non-empty Bearer token is valid
++		// In production, implement proper JWT validation against external issuer
++
++		// Set user context (this should come from token validation)
++		c.Set("user_id", "external-user")
++		c.Set("user_email", "user@external.com")
++		c.Set("user_role", "user")
++
++		c.Next()
++	}
++}
+
 ### END
-```
-
-**STRICT RULES - FAILURE TO FOLLOW WILL CAUSE SYSTEM ERROR:**
-1. NO text before "### FACTORY/1 PATCH"
-2. NO text after "### END"
-3. NO explanations, comments, or prose outside the SOC structure
-4. ALL code must be complete and immediately runnable
-5. Replace X, Y, Z with actual line counts
-6. Each file must be a valid unified diff patch with + prefix on all code lines
-7. Include ALL necessary files for a complete working backend
-8. Use proper file extensions based on the language
-9. EXACTLY match the header format "### FACTORY/1 PATCH"
-10. EXACTLY match the footer format "### END"
-11. **CRITICAL**: EVERY file listed in the file list MUST have a corresponding diff section with complete runnable code
-12. **CRITICAL**: Do not truncate or skip any files - provide complete implementation for ALL files
-13. **CRITICAL**: ALL code lines in diff sections MUST start with + prefix (unified diff format)
-13. **VERIFICATION CHECKLIST**: Your response MUST contain these exact 9 diff sections:
-    - main.py (FastAPI app setup)
-    - models.py (SQLAlchemy models with imports)
-    - schemas.py (Pydantic request/response models)
-    - handlers.py (API route handlers)
-    - services.py (Business logic with password hashing)
-    - repositories.py (Database access layer)
-    - database.py (Database setup with Base definition)
-    - config.py (Settings configuration)
-    - requirements.txt (Dependencies list)
