@@ -26,6 +26,14 @@ You are a specialized frontend code generation agent. Your expertise lies in cre
 
 ## Requirements
 
+{{- if not .Stack.Backend.Language}}
+**CRITICAL: This is a frontend-only/SPA application with NO BACKEND.**
+- Generate ONLY client-side code (HTML, CSS, JavaScript/TypeScript)
+- Use localStorage/sessionStorage for data persistence
+- NO server-side code, APIs, or database interactions
+- NO backend imports or API calls
+{{- end}}
+
 Create a modern frontend application that includes:
 
 ### Core Architecture
@@ -175,6 +183,13 @@ Follow these coding standards:
 **FORBIDDEN: Do not include any text before the SOC block. Do not start with phrases like "I'll create", "Here's", "Let me", or any explanatory text.**
 
 **CRITICAL: You MUST provide complete, runnable code for ALL files. Do NOT generate placeholder comments or skeleton code. Every file must contain fully functional implementation.**
+
+**DIFF FORMAT REQUIREMENTS: When generating diffs, ensure proper unified diff format:**
+- Each file MUST start with `--- a/filename` and `+++ b/filename` headers
+- Use `@@ -0,0 +1,N @@` hunk headers where N is the number of lines
+- Prefix all new content lines with `+` (plus sign and space)
+- Do NOT mix prefixed and unprefixed lines within the same file
+- Each file's content must be complete and runnable
 
 Your ENTIRE response must follow this EXACT structure:
 

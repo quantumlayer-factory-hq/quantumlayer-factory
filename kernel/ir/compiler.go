@@ -288,12 +288,65 @@ func (c *Compiler) extractDomain(brief string) string {
 	return "general"
 }
 
+// isSPAOnly determines if the brief describes a single-page application with no backend
+func (c *Compiler) isSPAOnly(brief string) bool {
+	briefLower := strings.ToLower(brief)
+
+	fmt.Printf("[IR-COMPILER] Checking if SPA-only for brief: %s\n", briefLower)
+
+	// Explicit SPA indicators
+	spaKeywords := []string{
+		"no backend", "no server", "frontend only", "client-side only",
+		"single-page application", "spa", "client side", "local state",
+		"localstorage", "no api", "frontend-only", "browser-only",
+	}
+
+	for _, keyword := range spaKeywords {
+		if strings.Contains(briefLower, keyword) {
+			fmt.Printf("[IR-COMPILER] Found SPA keyword: '%s' - returning true\n", keyword)
+			return true
+		}
+	}
+
+	// If it mentions React/Vue/Angular with explicit storage but no backend tech
+	hasFrontendFramework := strings.Contains(briefLower, "react") ||
+		strings.Contains(briefLower, "vue") ||
+		strings.Contains(briefLower, "angular")
+
+	hasLocalStorage := strings.Contains(briefLower, "localstorage") ||
+		strings.Contains(briefLower, "local storage") ||
+		strings.Contains(briefLower, "browser storage")
+
+	hasBackendTech := strings.Contains(briefLower, "api") ||
+		strings.Contains(briefLower, "server") ||
+		strings.Contains(briefLower, "database") ||
+		strings.Contains(briefLower, "backend")
+
+	result := hasFrontendFramework && hasLocalStorage && !hasBackendTech
+	fmt.Printf("[IR-COMPILER] SPA detection result: %v (frontend=%v, localStorage=%v, backendTech=%v)\n",
+		result, hasFrontendFramework, hasLocalStorage, hasBackendTech)
+
+	return result
+}
+
 func (c *Compiler) extractTechStack(brief string) TechStack {
+	// Check if this is a frontend-only/SPA request
+	isSPAOnly := c.isSPAOnly(brief)
+
 	stack := TechStack{
-		Backend:  c.extractBackendStack(brief),
 		Frontend: c.extractFrontendStack(brief),
-		Database: c.extractDatabaseStack(brief),
-		Cache:    c.extractCacheStack(brief),
+	}
+
+	// Only add backend/database stacks if not SPA-only
+	if !isSPAOnly {
+		stack.Backend = c.extractBackendStack(brief)
+		stack.Database = c.extractDatabaseStack(brief)
+		stack.Cache = c.extractCacheStack(brief)
+	} else {
+		// For SPA-only apps, set empty backend/database stacks
+		stack.Backend = BackendStack{}
+		stack.Database = DatabaseStack{}
+		stack.Cache = CacheStack{}
 	}
 
 	return stack

@@ -41,40 +41,63 @@ func (f *AgentFactory) CreateAgent(agentType AgentType) (Agent, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	// Debug logging for agent creation
+	fmt.Printf("[FACTORY] Creating agent type: %s, LLMClient: %v, PromptComposer: %v\n",
+		agentType, f.llmClient != nil, f.promptComposer != nil)
+
 	// If LLM is available, create LLM-enabled agents
 	if f.llmClient != nil && f.promptComposer != nil {
 		agent := f.createLLMAgent(agentType)
 		if agent != nil {
 			f.agents[agentType] = agent
+			fmt.Printf("[FACTORY] Successfully created LLM agent for %s\n", agentType)
 			return agent, nil
 		}
+		fmt.Printf("[FACTORY] createLLMAgent returned nil for %s, falling back to creators\n", agentType)
+	} else {
+		fmt.Printf("[FACTORY] LLM not available for %s, falling back to creators\n", agentType)
 	}
 
 	// Fallback to standard creator-based agents
 	creator, exists := f.creators[agentType]
 	if !exists {
+		fmt.Printf("[FACTORY] No creator registered for %s\n", agentType)
 		return nil, fmt.Errorf("agent type %s not registered", agentType)
 	}
 
 	agent := creator()
 	f.agents[agentType] = agent
+	fmt.Printf("[FACTORY] Created agent using creator for %s\n", agentType)
 	return agent, nil
 }
 
 // createLLMAgent creates an LLM-enabled agent for the given type
 func (f *AgentFactory) createLLMAgent(agentType AgentType) Agent {
+	fmt.Printf("[FACTORY] createLLMAgent called for %s\n", agentType)
+
 	switch agentType {
 	case AgentTypeBackend:
-		return NewBackendAgentWithLLM(f.llmClient, f.promptComposer)
+		agent := NewBackendAgentWithLLM(f.llmClient, f.promptComposer)
+		fmt.Printf("[FACTORY] Created backend agent: %v\n", agent != nil)
+		return agent
 	case AgentTypeFrontend:
-		return NewFrontendAgentWithLLM(f.llmClient, f.promptComposer)
+		agent := NewFrontendAgentWithLLM(f.llmClient, f.promptComposer)
+		fmt.Printf("[FACTORY] Created frontend agent: %v\n", agent != nil)
+		return agent
 	case AgentTypeDatabase:
-		return NewDatabaseAgentWithLLM(f.llmClient, f.promptComposer)
+		agent := NewDatabaseAgentWithLLM(f.llmClient, f.promptComposer)
+		fmt.Printf("[FACTORY] Created database agent: %v\n", agent != nil)
+		return agent
 	case AgentTypeAPI:
-		return NewAPIAgentWithLLM(f.llmClient, f.promptComposer)
+		agent := NewAPIAgentWithLLM(f.llmClient, f.promptComposer)
+		fmt.Printf("[FACTORY] Created API agent: %v\n", agent != nil)
+		return agent
 	case AgentTypeTest:
-		return NewTestAgentWithLLM(f.llmClient, f.promptComposer)
+		agent := NewTestAgentWithLLM(f.llmClient, f.promptComposer)
+		fmt.Printf("[FACTORY] Created test agent: %v\n", agent != nil)
+		return agent
 	default:
+		fmt.Printf("[FACTORY] Unknown agent type: %s, returning nil\n", agentType)
 		return nil
 	}
 }

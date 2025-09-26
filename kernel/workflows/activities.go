@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -123,8 +124,8 @@ func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []str
 		return result, nil
 	}
 
-	// Generate backend code
-	if irSpec.App.Stack.Backend.Language != "" {
+	// Generate backend code (only if backend stack is properly configured)
+	if irSpec.App.Stack.Backend.Language != "" && irSpec.App.Stack.Backend.Framework != "" {
 
 		backendAgent, err := factory.CreateAgent(agents.AgentTypeBackend)
 		if err != nil {
@@ -216,8 +217,8 @@ func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []str
 		}
 	}
 
-	// Generate database code if entities are defined
-	if len(irSpec.Data.Entities) > 0 {
+	// Generate database code if entities are defined AND database stack is configured
+	if len(irSpec.Data.Entities) > 0 && irSpec.App.Stack.Database.Type != "" {
 		databaseAgent, err := factory.CreateAgent(agents.AgentTypeDatabase)
 		if err != nil {
 			result.Success = false
@@ -256,6 +257,23 @@ func GenerateCodeActivity(ctx context.Context, irSpec *ir.IRSpec, overlays []str
 					result.Artifacts = append(result.Artifacts, file.Path)
 				}
 				result.Warnings = append(result.Warnings, output.Warnings...)
+			}
+		}
+	}
+
+	// Validate SPA-only requirements if this is a frontend-only app
+	if shouldValidateSPA(irSpec) {
+		violations := validateSPAOnly(result.GeneratedCode)
+		if len(violations) > 0 {
+			fmt.Printf("SPA validation failed: %v. Attempting repair...\n", violations)
+
+			// Attempt one-shot repair
+			repairedCode, err := repairSPA(ctx, factory, irSpec, violations)
+			if err != nil {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("SPA repair failed: %v", err))
+			} else {
+				fmt.Printf("SPA repair successful, replacing generated code\n")
+				result.GeneratedCode = repairedCode
 			}
 		}
 	}
@@ -386,28 +404,43 @@ func PackageArtifactsActivity(ctx context.Context, generatedCode map[string]stri
 			}, fmt.Errorf("failed to create project directory: %w", err)
 		}
 
-		// Write each generated file
+		// Write each generated file using splitter
 		for filename, content := range generatedCode {
-			filePath := filepath.Join(projectDir, filename)
-			dir := filepath.Dir(filePath)
-
-			// Create subdirectories if needed
-			if dir != projectDir {
-				err := os.MkdirAll(dir, 0755)
-				if err != nil {
-					fmt.Printf("Warning: Failed to create directory %s: %v\n", dir, err)
-					continue
-				}
-			}
-
-			// Write file
-			err := os.WriteFile(filePath, []byte(content), 0644)
+			files, err := splitContent(filename, content)
 			if err != nil {
-				fmt.Printf("Warning: Failed to write file %s: %v\n", filename, err)
+				fmt.Printf("Warning: Failed to split content for %s: %v\n", filename, err)
 				continue
 			}
 
-			result.ArtifactPaths = append(result.ArtifactPaths, filePath)
+			for _, file := range files {
+				// Harden path (prevent traversal)
+				safePath := hardenPath(file.Path)
+				if safePath == "" {
+					fmt.Printf("Warning: Skipped unsafe path: %s\n", file.Path)
+					continue
+				}
+
+				filePath := filepath.Join(projectDir, safePath)
+				dir := filepath.Dir(filePath)
+
+				// Create subdirectories if needed
+				if dir != projectDir {
+					err := os.MkdirAll(dir, 0755)
+					if err != nil {
+						fmt.Printf("Warning: Failed to create directory %s: %v\n", dir, err)
+						continue
+					}
+				}
+
+				// Write file
+				err := os.WriteFile(filePath, []byte(file.Content), 0644)
+				if err != nil {
+					fmt.Printf("Warning: Failed to write file %s: %v\n", safePath, err)
+					continue
+				}
+
+				result.ArtifactPaths = append(result.ArtifactPaths, filePath)
+			}
 		}
 
 		// Write IR spec as JSON
@@ -663,4 +696,258 @@ func createCapsulePackage(ctx context.Context, projectDir string, irSpec *ir.IRS
 	}
 
 	return result.CapsulePath, result.Size, nil
+}
+
+// SplitFile represents a file extracted from content
+type SplitFile struct {
+	Path    string
+	Content string
+}
+
+// splitContent parses blob content and fans out files
+func splitContent(originalKey, content string) ([]SplitFile, error) {
+	// Check if content contains SOC format
+	if strings.Contains(content, "### FACTORY/1 PATCH") {
+		return parseSOCBundle(content)
+	}
+
+	// Check if content contains unified diff format
+	if strings.Contains(content, "diff --git") || strings.Contains(content, "--- /dev/null") {
+		return parseUnifiedDiff(content)
+	}
+
+	// Otherwise, treat as single file
+	return []SplitFile{{
+		Path:    originalKey,
+		Content: content,
+	}}, nil
+}
+
+// parseSOCBundle extracts files from SOC format bundle
+func parseSOCBundle(content string) ([]SplitFile, error) {
+	var files []SplitFile
+	lines := strings.Split(content, "\n")
+
+	var currentFile *SplitFile
+	var inFileContent bool
+
+	for _, line := range lines {
+		// SOC file marker: "- file: path/to/file.ext"
+		if strings.HasPrefix(line, "- file: ") {
+			// Save previous file if exists
+			if currentFile != nil {
+				files = append(files, *currentFile)
+			}
+
+			// Start new file
+			path := strings.TrimPrefix(line, "- file: ")
+			currentFile = &SplitFile{Path: path, Content: ""}
+			inFileContent = false
+			continue
+		}
+
+		// Diff header lines
+		if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "@@") {
+			inFileContent = true
+			continue
+		}
+
+		// Content lines (remove + prefix from diffs)
+		if currentFile != nil && inFileContent {
+			if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+				currentFile.Content += strings.TrimPrefix(line, "+") + "\n"
+			} else if !strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "###") {
+				currentFile.Content += line + "\n"
+			}
+		}
+	}
+
+	// Save last file
+	if currentFile != nil {
+		files = append(files, *currentFile)
+	}
+
+	return files, nil
+}
+
+// parseUnifiedDiff extracts files from unified diff format
+func parseUnifiedDiff(content string) ([]SplitFile, error) {
+	var files []SplitFile
+	lines := strings.Split(content, "\n")
+
+	var currentFile *SplitFile
+
+	for _, line := range lines {
+		// New file marker: "+++ b/path/to/file.ext"
+		if strings.HasPrefix(line, "+++ b/") {
+			// Save previous file
+			if currentFile != nil {
+				files = append(files, *currentFile)
+			}
+
+			// Start new file
+			path := strings.TrimPrefix(line, "+++ b/")
+			currentFile = &SplitFile{Path: path, Content: ""}
+			continue
+		}
+
+		// Content lines (skip diff headers)
+		if currentFile != nil && !strings.HasPrefix(line, "---") &&
+		   !strings.HasPrefix(line, "+++") && !strings.HasPrefix(line, "@@") &&
+		   !strings.HasPrefix(line, "diff --git") {
+			if strings.HasPrefix(line, "+") {
+				currentFile.Content += strings.TrimPrefix(line, "+") + "\n"
+			}
+		}
+	}
+
+	// Save last file
+	if currentFile != nil {
+		files = append(files, *currentFile)
+	}
+
+	return files, nil
+}
+
+// hardenPath prevents path traversal and normalizes paths
+func hardenPath(path string) string {
+	// Remove leading slash
+	path = strings.TrimPrefix(path, "/")
+
+	// Check for path traversal attempts
+	if strings.Contains(path, "..") {
+		return ""
+	}
+
+	// Normalize path separators
+	path = filepath.Clean(path)
+
+	// Additional safety checks
+	if path == "." || path == "" {
+		return ""
+	}
+
+	return path
+}
+
+// shouldValidateSPA determines if SPA validation should be applied
+func shouldValidateSPA(irSpec *ir.IRSpec) bool {
+	// Check if brief mentions "no backend" or "SPA" or "single-page"
+	brief := strings.ToLower(irSpec.Brief)
+	return strings.Contains(brief, "no backend") ||
+		strings.Contains(brief, "spa") ||
+		strings.Contains(brief, "single-page") ||
+		strings.Contains(brief, "client-side")
+}
+
+// validateSPAOnly validates that generated code is SPA-only
+func validateSPAOnly(generatedCode map[string]string) []string {
+	var violations []string
+
+	// Check for banned file extensions and directories
+	bannedExts := []string{".py", ".sql", ".sh", ".yml", ".yaml", ".toml", ".dockerfile"}
+	bannedDirs := []string{"backend", "server", "api", "database", "migrations", "ops"}
+
+	for filepath, content := range generatedCode {
+		// Check file extensions
+		for _, ext := range bannedExts {
+			if strings.HasSuffix(filepath, ext) {
+				violations = append(violations, fmt.Sprintf("Banned file extension: %s", filepath))
+			}
+		}
+
+		// Check directories
+		for _, dir := range bannedDirs {
+			if strings.Contains(filepath, dir+"/") {
+				violations = append(violations, fmt.Sprintf("Banned directory: %s in %s", dir, filepath))
+			}
+		}
+
+		// Check content for backend patterns
+		contentLower := strings.ToLower(content)
+		patterns := []string{
+			"fastapi", "sqlalchemy", "psycopg2", "alembic",
+			"create\\s+table", "### factory/1 patch",
+			"oauth2passwordbearer", "bcrypt", "jwt",
+		}
+
+		for _, pattern := range patterns {
+			if matched, _ := regexp.MatchString(pattern, contentLower); matched {
+				violations = append(violations, fmt.Sprintf("Banned content pattern '%s' in %s", pattern, filepath))
+			}
+		}
+	}
+
+	// Check for required SPA files
+	required := []string{"package.json", "index.html", "src/main.tsx", "src/App.tsx"}
+	for _, req := range required {
+		found := false
+		for filepath := range generatedCode {
+			if strings.Contains(filepath, req) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			violations = append(violations, fmt.Sprintf("Missing required file: %s", req))
+		}
+	}
+
+	return violations
+}
+
+// repairSPA attempts to repair SPA violations with a one-shot LLM call
+func repairSPA(ctx context.Context, factory *agents.AgentFactory, irSpec *ir.IRSpec, violations []string) (map[string]string, error) {
+	// Get frontend agent for repair
+	frontendAgent, err := factory.CreateAgent(agents.AgentTypeFrontend)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create frontend agent for repair: %w", err)
+	}
+
+	// Create repair prompt
+	repairPrompt := fmt.Sprintf(`Your output included backend/SQL artifacts. Re-emit a pure React+TypeScript SPA as a single unified diff. No prose.
+
+Required files: package.json, index.html, tsconfig.json, vite.config.ts, src/main.tsx, src/App.tsx, components, styles.
+Forbidden: backend, SQL, SOC headers.
+
+Brief: %s
+
+Generate ONLY frontend files for a client-side todo application with localStorage persistence.`, irSpec.Brief)
+
+	// Create repair request
+	request := &agents.GenerationRequest{
+		Spec: irSpec,
+		Target: agents.GenerationTarget{
+			Type:      "frontend",
+			Language:  "typescript",
+			Framework: "react",
+		},
+		Options: agents.GenerationOptions{
+			CreateDirectories: true,
+			FormatCode:       true,
+			ValidateOutput:   true,
+		},
+		Context: map[string]interface{}{
+			"workflow": "repair",
+			"prompt":   repairPrompt,
+		},
+	}
+
+	// Generate repaired code
+	output, err := frontendAgent.Generate(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("repair generation failed: %w", err)
+	}
+
+	if !output.Success {
+		return nil, fmt.Errorf("repair generation unsuccessful: %v", output.Errors)
+	}
+
+	// Convert to map format
+	repairedCode := make(map[string]string)
+	for _, file := range output.Files {
+		repairedCode[file.Path] = file.Content
+	}
+
+	return repairedCode, nil
 }
