@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -255,6 +256,13 @@ func (c *Compiler) extractAppType(brief string) string {
 }
 
 func (c *Compiler) extractDomain(brief string) string {
+	log.Printf("DEBUG: Extracting domain for brief: %s", brief)
+	// Check for inventory management domain first
+	if c.isInventoryManagement(brief) {
+		log.Printf("DEBUG: Domain detected as inventory")
+		return "inventory"
+	}
+
 	domains := map[string]string{
 		`\b(?:ecommerce|e-commerce|shop|store|cart|product|order)\b`:     "ecommerce",
 		`\b(?:fintech|banking|payment|invoice|billing|finance)\b`:        "fintech",
@@ -268,6 +276,7 @@ func (c *Compiler) extractDomain(brief string) string {
 		`\b(?:real\s+estate|property|listing)\b`:                         "realestate",
 		`\b(?:travel|booking|hotel|flight|reservation)\b`:                "travel",
 		`\b(?:food|restaurant|menu|delivery)\b`:                          "food",
+		`\b(?:inventory)\b`:                                               "inventory",
 	}
 
 	for pattern, domain := range domains {
@@ -339,11 +348,19 @@ func (c *Compiler) extractBackendStack(brief string) BackendStack {
 
 	// Detect framework for the detected language
 	if langFrameworks, exists := frameworks[language]; exists {
+		// Try to match specific framework patterns first
+		frameworkDetected := false
 		for pattern, fw := range langFrameworks {
 			if matched, _ := regexp.MatchString(pattern, brief); matched {
 				framework = fw
+				frameworkDetected = true
 				break
 			}
+		}
+
+		// If no specific framework was detected, use the default for that language
+		if !frameworkDetected {
+			framework = c.getDefaultFrameworkForLanguage(language)
 		}
 	}
 
@@ -547,9 +564,13 @@ func (c *Compiler) extractSecuritySpec(brief string) SecuritySpec {
 	}
 
 	authz := []string{"rbac"}
-	if c.containsPattern(brief, `\bacl\b|access\s+control\s+list\b`) {
+	if c.isInventoryManagement(brief) {
+		log.Printf("DEBUG: Setting authorization to external for inventory management")
+		authz = []string{"external"}
+	} else if c.containsPattern(brief, `\bacl\b|access\s+control\s+list\b`) {
 		authz = append(authz, "acl")
 	}
+	log.Printf("DEBUG: Authorization set to: %v", authz)
 
 	encryption := []string{"tls", "bcrypt"}
 	if c.containsPattern(brief, `\baes\b`) {
@@ -637,16 +658,25 @@ func (c *Compiler) extractAPISpec(brief string) APISpec {
 		apiType = "grpc"
 	}
 
+	// Configure auth - use external issuer for inventory management systems
+	authSpec := AuthSpec{
+		Type:     "bearer",
+		Required: true,
+	}
+
+	if c.isInventoryManagement(brief) {
+		// Use external auth for inventory systems to prevent user table generation
+		authSpec.Issuer = "external"
+		authSpec.JWKSURL = "https://auth.example.com/.well-known/jwks.json"
+	}
+
 	return APISpec{
-		Type:    apiType,
-		Version: "v1",
-		BaseURL: "/api/v1",
-		Auth: AuthSpec{
-			Type:     "bearer",
-			Required: true,
-		},
+		Type:      apiType,
+		Version:   "v1",
+		BaseURL:   "/api/v1",
+		Auth:      authSpec,
 		Endpoints: c.extractEndpoints(brief),
-		Schemas:   []Schema{},
+		Schemas:   c.extractSchemas(brief),
 		Config: APIConfig{
 			CORS:        true,
 			Compression: true,
@@ -776,6 +806,11 @@ func (c *Compiler) extractDataSpec(brief string) DataSpec {
 func (c *Compiler) extractEntities(brief string) []Entity {
 	entities := []Entity{}
 
+	// Check for inventory management domain first
+	if c.isInventoryManagement(brief) {
+		return c.getInventoryEntities()
+	}
+
 	// Define entity patterns and names in order
 	entityDefs := []struct {
 		pattern string
@@ -802,6 +837,32 @@ func (c *Compiler) extractEntities(brief string) []Entity {
 				{Name: "name", Type: "string", Required: true},
 				{Name: "description", Type: "text"},
 				{Name: "price", Type: "decimal", Required: true},
+				{Name: "category_id", Type: "uuid"},
+				{Name: "supplier_id", Type: "uuid"},
+				{Name: "created_at", Type: "timestamp", Required: true},
+				{Name: "updated_at", Type: "timestamp", Required: true},
+			},
+		},
+		{
+			pattern: `(?i)\b(?:categories|category)\b`,
+			name:    "Category",
+			fields: []Field{
+				{Name: "id", Type: "uuid", Required: true, Unique: true},
+				{Name: "name", Type: "string", Required: true},
+				{Name: "description", Type: "text"},
+				{Name: "created_at", Type: "timestamp", Required: true},
+				{Name: "updated_at", Type: "timestamp", Required: true},
+			},
+		},
+		{
+			pattern: `(?i)\b(?:suppliers?|vendors?)\b`,
+			name:    "Supplier",
+			fields: []Field{
+				{Name: "id", Type: "uuid", Required: true, Unique: true},
+				{Name: "name", Type: "string", Required: true},
+				{Name: "email", Type: "string"},
+				{Name: "phone", Type: "string"},
+				{Name: "address", Type: "text"},
 				{Name: "created_at", Type: "timestamp", Required: true},
 				{Name: "updated_at", Type: "timestamp", Required: true},
 			},
@@ -875,6 +936,25 @@ func (c *Compiler) extractRelationships(brief string, entities []Entity) []Relat
 			To:         "Invoice",
 			Type:       "one_to_many",
 			ForeignKey: "customer_id",
+		})
+	}
+
+	// Inventory relationships
+	if entityMap["category"] && entityMap["product"] {
+		relationships = append(relationships, Relationship{
+			From:       "Category",
+			To:         "Product",
+			Type:       "one_to_many",
+			ForeignKey: "category_id",
+		})
+	}
+
+	if entityMap["supplier"] && entityMap["product"] {
+		relationships = append(relationships, Relationship{
+			From:       "Supplier",
+			To:         "Product",
+			Type:       "one_to_many",
+			ForeignKey: "supplier_id",
 		})
 	}
 
@@ -1084,6 +1164,103 @@ func (c *Compiler) extractRuntime(brief string) string {
 	return "docker" // default
 }
 
+// getDefaultFrameworkForLanguage returns the default framework for each language
+func (c *Compiler) getDefaultFrameworkForLanguage(language string) string {
+	languageDefaults := map[string]string{
+		"python": "fastapi",
+		"go":     "gin",
+		"nodejs": "express",
+		"java":   "spring",
+		"ruby":   "rails",
+		"php":    "laravel",
+		"rust":   "actix",
+		"csharp": "asp.net",
+	}
+
+	if framework, exists := languageDefaults[language]; exists {
+		return framework
+	}
+
+	// Fallback to the configured default
+	return c.defaults.Backend.Framework
+}
+
+// isInventoryManagement checks if the brief describes inventory management functionality
+func (c *Compiler) isInventoryManagement(brief string) bool {
+	log.Printf("DEBUG: Checking if inventory management for brief: %s", brief)
+	inventoryPatterns := []string{
+		`(?i)\binventory\s+management\b`,
+		`(?i)\binventory\s+api\b`,
+		`(?i)\binventory\s+system\b`,
+		`(?i)products?.*(categories|suppliers|vendors)`,
+		`(?i)(categories|suppliers|vendors).*products?`,
+		`(?i)products?\s+(and|,)\s*(categories|suppliers|vendors)`,
+	}
+
+	for i, pattern := range inventoryPatterns {
+		if matched, _ := regexp.MatchString(pattern, brief); matched {
+			log.Printf("DEBUG: Inventory management detected with pattern %d: %s", i, pattern)
+			return true
+		}
+	}
+
+	log.Printf("DEBUG: No inventory management patterns matched")
+	return false
+}
+
+// getInventoryEntities returns all inventory-related entities
+func (c *Compiler) getInventoryEntities() []Entity {
+	return []Entity{
+		{
+			Name:        "Product",
+			Description: "Product entity",
+			Fields: []Field{
+				{Name: "id", Type: "uuid", Required: true, Unique: true},
+				{Name: "name", Type: "string", Required: true},
+				{Name: "description", Type: "text"},
+				{Name: "price", Type: "decimal", Required: true},
+				{Name: "category_id", Type: "uuid"},
+				{Name: "supplier_id", Type: "uuid"},
+				{Name: "created_at", Type: "timestamp", Required: true},
+				{Name: "updated_at", Type: "timestamp", Required: true},
+			},
+			Constraints: []Constraint{
+				{Type: "primary_key", Fields: []string{"id"}},
+			},
+		},
+		{
+			Name:        "Category",
+			Description: "Category entity",
+			Fields: []Field{
+				{Name: "id", Type: "uuid", Required: true, Unique: true},
+				{Name: "name", Type: "string", Required: true},
+				{Name: "description", Type: "text"},
+				{Name: "created_at", Type: "timestamp", Required: true},
+				{Name: "updated_at", Type: "timestamp", Required: true},
+			},
+			Constraints: []Constraint{
+				{Type: "primary_key", Fields: []string{"id"}},
+			},
+		},
+		{
+			Name:        "Supplier",
+			Description: "Supplier entity",
+			Fields: []Field{
+				{Name: "id", Type: "uuid", Required: true, Unique: true},
+				{Name: "name", Type: "string", Required: true},
+				{Name: "email", Type: "string"},
+				{Name: "phone", Type: "string"},
+				{Name: "address", Type: "text"},
+				{Name: "created_at", Type: "timestamp", Required: true},
+				{Name: "updated_at", Type: "timestamp", Required: true},
+			},
+			Constraints: []Constraint{
+				{Type: "primary_key", Fields: []string{"id"}},
+			},
+		},
+	}
+}
+
 func (c *Compiler) generateQuestions(spec *IRSpec, brief string) []BlockingQuestion {
 	questions := []BlockingQuestion{}
 
@@ -1246,5 +1423,125 @@ func getDefaults() CompilerDefaults {
 			Type:    "redis",
 			Version: "7",
 		},
+	}
+}
+
+// extractSchemas generates API schemas based on entities
+func (c *Compiler) extractSchemas(brief string) []Schema {
+	schemas := []Schema{}
+	entities := c.extractEntities(brief)
+
+	for _, entity := range entities {
+		entityName := entity.Name
+
+		// Main entity schema
+		properties := make(map[string]Property)
+		required := []string{}
+
+		for _, field := range entity.Fields {
+			prop := Property{
+				Type:        c.mapFieldTypeToSchemaType(field.Type),
+				Description: field.Description,
+			}
+
+			if field.Type == "uuid" {
+				prop.Format = "uuid"
+			} else if field.Type == "timestamp" {
+				prop.Format = "date-time"
+			} else if field.Type == "decimal" {
+				prop.Type = "number"
+			}
+
+			properties[field.Name] = prop
+
+			if field.Required {
+				required = append(required, field.Name)
+			}
+		}
+
+		schemas = append(schemas, Schema{
+			Name:        entityName,
+			Type:        "object",
+			Properties:  properties,
+			Required:    required,
+			Description: entity.Description,
+		})
+
+		// Create schema for creation (without id, timestamps)
+		createProps := make(map[string]Property)
+		createRequired := []string{}
+
+		for _, field := range entity.Fields {
+			if field.Name == "id" || field.Name == "created_at" || field.Name == "updated_at" {
+				continue
+			}
+			createProps[field.Name] = properties[field.Name]
+			if field.Required {
+				createRequired = append(createRequired, field.Name)
+			}
+		}
+
+		schemas = append(schemas, Schema{
+			Name:        "Create" + entityName,
+			Type:        "object",
+			Properties:  createProps,
+			Required:    createRequired,
+			Description: "Create " + strings.ToLower(entityName) + " request",
+		})
+
+		// Update schema (all optional)
+		schemas = append(schemas, Schema{
+			Name:        "Update" + entityName,
+			Type:        "object",
+			Properties:  createProps,
+			Required:    []string{}, // All optional for updates
+			Description: "Update " + strings.ToLower(entityName) + " request",
+		})
+
+		// List schema
+		listProperties := map[string]Property{
+			"data": {
+				Type: "array",
+				Items: &Property{
+					Type: "object",
+					Properties: map[string]Property{
+						"id":   {Type: "string", Format: "uuid"},
+						"name": {Type: "string"},
+					},
+				},
+			},
+			"total": {
+				Type:        "integer",
+				Description: "Total count",
+			},
+		}
+
+		schemas = append(schemas, Schema{
+			Name:        entityName + "List",
+			Type:        "object",
+			Properties:  listProperties,
+			Required:    []string{"data", "total"},
+			Description: entityName + " list response",
+		})
+	}
+
+	return schemas
+}
+
+// mapFieldTypeToSchemaType converts field types to schema types
+func (c *Compiler) mapFieldTypeToSchemaType(fieldType string) string {
+	switch fieldType {
+	case "string", "text", "uuid":
+		return "string"
+	case "integer":
+		return "integer"
+	case "decimal", "float":
+		return "number"
+	case "boolean":
+		return "boolean"
+	case "timestamp", "date":
+		return "string"
+	default:
+		return "string"
 	}
 }

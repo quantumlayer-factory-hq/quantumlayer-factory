@@ -85,8 +85,10 @@ func applyEnvironmentOverrides(config *Config) {
 		config.Bedrock.Region = v
 	}
 
-	// Azure OpenAI configuration
-	if v := os.Getenv("AZURE_OPENAI_KEY"); v != "" {
+	// Azure OpenAI configuration (support both variable names)
+	if v := os.Getenv("AZURE_OPENAI_API_KEY"); v != "" {
+		config.Azure.APIKey = v
+	} else if v := os.Getenv("AZURE_OPENAI_KEY"); v != "" {
 		config.Azure.APIKey = v
 	}
 	if v := os.Getenv("AZURE_OPENAI_ENDPOINT"); v != "" {

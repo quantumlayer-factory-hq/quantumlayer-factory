@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qlf-worker
+  namespace: quantumlayer-factory
+  labels:
+    app: qlf-worker
+    component: worker
+    version: v1.0.0
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: qlf-worker
+  template:
+    metadata:
+      labels:
+        app: qlf-worker
+        component: worker
+        version: v1.0.0
+    spec:
+      serviceAccountName: qlf-service-account
+      containers:
+      - name: qlf-worker
+        image: qlfregistry.azurecr.io/qlf/worker:latest
+        ports:
+        - containerPort: 8091
+          name: health
+        env:
+        - name: TEMPORAL_ADDRESS
+          value: "temporal-frontend:7233"
+        - name: TASK_QUEUE
+          value: "factory-task-queue"
+        envFrom:
+        - secretRef:
+            name: qlf-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health/liveness
+            port: 8091
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/readiness
+            port: 8091
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: generated
+          mountPath: /app/generated
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: generated
+        persistentVolumeClaim:
+          claimName: qlf-generated-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qlf-worker
+  namespace: quantumlayer-factory
+  labels:
+    app: qlf-worker
+    component: worker
+spec:
+  type: ClusterIP
+  ports:
+  - name: health
+    port: 8091
+    targetPort: 8091
+    protocol: TCP
+  selector:
+    app: qlf-worker
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: qlf-worker-hpa
+  namespace: quantumlayer-factory
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: qlf-worker
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

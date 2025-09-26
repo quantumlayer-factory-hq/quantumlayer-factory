@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: quantumlayer-factory
+  labels:
+    name: quantumlayer-factory
+    app.kubernetes.io/name: quantumlayer-factory
+    app.kubernetes.io/managed-by: azure-deployment
+    environment: production
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: qlf-service-account
+  namespace: quantumlayer-factory
+  labels:
+    app.kubernetes.io/name: quantumlayer-factory
+    app.kubernetes.io/managed-by: azure-deployment

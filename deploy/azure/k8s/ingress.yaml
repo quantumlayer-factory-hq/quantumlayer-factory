@@ -1,0 +1,108 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: qlf-ingress
+  namespace: quantumlayer-factory
+  labels:
+    app: qlf-ingress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/client-body-buffer-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  tls:
+  - hosts:
+    - api.quantumlayer.dev
+    - app.quantumlayer.dev
+    - temporal.quantumlayer.dev
+    secretName: qlf-tls
+  rules:
+  # API Server
+  - host: api.quantumlayer.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: qlf-server
+            port:
+              number: 8080
+  # Frontend Application
+  - host: app.quantumlayer.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: qlf-frontend
+            port:
+              number: 3000
+  # Temporal UI
+  - host: temporal.quantumlayer.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: temporal-ui
+            port:
+              number: 8080
+---
+# Network Policy for additional security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qlf-network-policy
+  namespace: quantumlayer-factory
+spec:
+  podSelector:
+    matchLabels:
+      app: qlf-server
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app: qlf-frontend
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: temporal-server
+    ports:
+    - protocol: TCP
+      port: 7233
+  - to:
+    - podSelector:
+        matchLabels:
+          app: qlf-worker
+    ports:
+    - protocol: TCP
+      port: 8091
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow HTTPS outbound (for LLM APIs)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443

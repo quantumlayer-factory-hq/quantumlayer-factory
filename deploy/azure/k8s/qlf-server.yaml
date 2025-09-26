@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qlf-server
+  namespace: quantumlayer-factory
+  labels:
+    app: qlf-server
+    component: server
+    version: v1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: qlf-server
+  template:
+    metadata:
+      labels:
+        app: qlf-server
+        component: server
+        version: v1.0.0
+    spec:
+      serviceAccountName: qlf-service-account
+      containers:
+      - name: qlf-server
+        image: qlfregistry.azurecr.io/qlf/server:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8091
+          name: health
+        env:
+        - name: PORT
+          value: "8080"
+        - name: TEMPORAL_ADDRESS
+          value: "temporal-frontend:7233"
+        envFrom:
+        - secretRef:
+            name: qlf-secrets
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health/liveness
+            port: 8091
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/readiness
+            port: 8091
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: generated
+          mountPath: /app/generated
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: generated
+        persistentVolumeClaim:
+          claimName: qlf-generated-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qlf-server
+  namespace: quantumlayer-factory
+  labels:
+    app: qlf-server
+    component: server
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: health
+    port: 8091
+    targetPort: 8091
+    protocol: TCP
+  selector:
+    app: qlf-server
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qlf-generated-storage
+  namespace: quantumlayer-factory
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: azurefile

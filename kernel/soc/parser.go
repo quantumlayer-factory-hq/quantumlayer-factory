@@ -40,7 +40,7 @@ var (
 	diffStartRegex   = regexp.MustCompile("^```diff\\s*$")
 	diffEndRegex     = regexp.MustCompile("^```\\s*$")
 	diffHeaderRegex  = regexp.MustCompile("^(---|\\+\\+\\+)\\s+[ab]/.*")
-	proseRegex       = regexp.MustCompile("(?i)(here's|let me|i'll|sure|of course|i can|based on|the code|this will|please|sorry)")
+	proseRegex       = regexp.MustCompile("(?i)^\\s*(here's|let me|i'll|sure[,.]|of course|i can|based on [^\\+\\-]*|this will|please[,.]|sorry[,.])")
 )
 
 func (p *Parser) Parse(input string) (*Patch, error) {

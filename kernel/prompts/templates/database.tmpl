@@ -23,6 +23,30 @@ You are a specialized database code generation agent. Your expertise lies in des
 - **{{.Name}}** ({{.Priority}}): {{.Description}}
 {{- end}}
 
+## Data Model Specification
+
+**CRITICAL: You MUST implement EXACTLY the entities defined in the IR specification below. Do NOT add extra entities like users, orders, or audit logs unless explicitly defined in the IR spec.**
+
+### Required Entities
+{{- range .Data.Entities}}
+**{{.Name}}** ({{.Description}}):
+{{- range .Fields}}
+- {{.Name}}: {{.Type}}{{if .Required}} (Required){{end}}{{if .Unique}} (Unique){{end}}
+{{- end}}
+{{- end}}
+
+### Entity Relationships
+{{- range .Data.Relationships}}
+- {{.From}} → {{.To}} ({{.Type}}) via {{.ForeignKey}}
+{{- end}}
+
+### Authentication Configuration
+{{- if eq .API.Auth.Issuer "external"}}
+**CRITICAL: External authentication is configured. Do NOT create user tables. Authentication is handled externally.**
+{{- else}}
+**Internal authentication configured - include user management tables.**
+{{- end}}
+
 ## Requirements
 
 Create a comprehensive database design that includes:
@@ -33,6 +57,7 @@ Create a comprehensive database design that includes:
 - Proper data types and column specifications
 - Indexes for query optimization
 - Views for complex data access patterns
+- **CRITICAL: ONLY implement the entities specified in the Data Model Specification above**
 
 ### Data Integrity
 - NOT NULL constraints where appropriate

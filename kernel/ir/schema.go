@@ -154,6 +154,8 @@ type AuthSpec struct {
 	Type     string   `json:"type"`     // "bearer", "api-key", "oauth2"
 	Scopes   []string `json:"scopes"`
 	Required bool     `json:"required"`
+	Issuer   string   `json:"issuer,omitempty"`   // "external" for external auth providers
+	JWKSURL  string   `json:"jwks_url,omitempty"` // URL for JWKS endpoint
 }
 
 type Endpoint struct {

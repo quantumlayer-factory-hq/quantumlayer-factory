@@ -64,6 +64,9 @@ ir_modifications:
           - name: "category_id"
             type: "uuid"
             foreign_key: "categories.category_id"
+          - name: "supplier_id"
+            type: "uuid"
+            foreign_key: "suppliers.supplier_id"
           - name: "brand"
             type: "string"
             indexed: true
@@ -176,6 +179,72 @@ ir_modifications:
             type: "string"
           - name: "tracking_number"
             type: "string"
+          - name: "created_at"
+            type: "timestamp"
+            immutable: true
+          - name: "updated_at"
+            type: "timestamp"
+      - name: "Category"
+        fields:
+          - name: "category_id"
+            type: "uuid"
+            primary_key: true
+          - name: "name"
+            type: "string"
+            unique: true
+            indexed: true
+          - name: "description"
+            type: "text"
+          - name: "parent_category_id"
+            type: "uuid"
+            foreign_key: "categories.category_id"
+            nullable: true
+          - name: "slug"
+            type: "string"
+            unique: true
+            indexed: true
+          - name: "sort_order"
+            type: "integer"
+            default: 0
+          - name: "is_active"
+            type: "boolean"
+            default: true
+          - name: "created_at"
+            type: "timestamp"
+            immutable: true
+          - name: "updated_at"
+            type: "timestamp"
+      - name: "Supplier"
+        fields:
+          - name: "supplier_id"
+            type: "uuid"
+            primary_key: true
+          - name: "name"
+            type: "string"
+            indexed: true
+          - name: "contact_person"
+            type: "string"
+          - name: "email"
+            type: "string"
+            indexed: true
+          - name: "phone"
+            type: "string"
+          - name: "address"
+            type: "json"
+          - name: "payment_terms"
+            type: "string"
+          - name: "lead_time_days"
+            type: "integer"
+            min: 0
+          - name: "rating"
+            type: "decimal"
+            precision: 3
+            scale: 2
+            min: 0
+            max: 5
+          - name: "is_active"
+            type: "boolean"
+            default: true
           - name: "created_at"
             type: "timestamp"
             immutable: true
